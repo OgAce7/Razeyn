@@ -5,7 +5,7 @@
 | Pipeline stage | Backend module | Status |
 |---|---|---|
 | Synthetic payment data | `app/data/` | **implemented** — see `docs/data_layer.md` |
-| Incident Detection | new `app/detection/` (not yet created) | not started |
+| Incident Detection | `app/detection/` | **implemented** — see `docs/detection.md` |
 | Evidence Retrieval | `app/retrieval/` | scaffolded (empty) |
 | AI Investigation Agent | `app/agent/` | scaffolded (empty) |
 | Recovery Decision | `app/agent/` (produces recommendation) | not started |
@@ -40,7 +40,6 @@ Any future code that executes a recovery action should live under
 
 ## Explicitly not built yet
 
-- Incident detection logic (anomaly/degradation detection over payment data)
 - Evidence retrieval implementation (structured + unstructured)
 - The agent itself (tool use, prompting, diagnosis)
 - Guardrail rules and allowed-action definitions

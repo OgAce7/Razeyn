@@ -43,11 +43,13 @@ razeyn/
 │   │   ├── core/              settings (env vars) + DB session setup
 │   │   ├── api/                HTTP routers (health.py so far)
 │   │   ├── models/            SQLAlchemy tables (not yet implemented)
-│   │   ├── data/                synthetic payment data + loaders (not yet implemented)
+│   │   ├── data/                synthetic payment data + loaders (implemented, see docs/data_layer.md)
+│   │   ├── detection/           deterministic degradation detection engine (implemented, see docs/detection.md)
 │   │   ├── retrieval/          evidence retrieval (structured + unstructured) (not yet implemented)
 │   │   ├── agent/               AI investigation agent (Claude) (not yet implemented)
 │   │   ├── policies/            deterministic guardrails + allowed actions (not yet implemented)
 │   │   └── audit/                audit trail logging (not yet implemented)
+│   ├── tests/                    pytest suite for the detection engine
 │   ├── requirements.txt
 │   └── .env.example
 ├── frontend/
@@ -111,5 +113,6 @@ Never commit real `.env` files — only the `.env.example` templates.
 ## Status
 
 Synthetic data + ground-truth incident generation is implemented (see
-`docs/data_layer.md`). Everything else is scaffold only. See
-`docs/architecture.md` for what's built vs. what's still to come.
+`docs/data_layer.md`). The deterministic degradation detection engine is
+implemented (see `docs/detection.md`). Everything else is scaffold only.
+See `docs/architecture.md` for what's built vs. what's still to come.

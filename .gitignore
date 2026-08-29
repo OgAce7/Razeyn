@@ -8,6 +8,9 @@ venv/
 # Generated synthetic dataset (reproducible via generate.py)
 backend/app/data/synthetic/
 
+# pytest cache
+.pytest_cache/
+
 # Env
 .env
 
