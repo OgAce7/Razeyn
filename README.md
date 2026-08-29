@@ -62,6 +62,10 @@ razeyn/
 Each pipeline stage above maps to one backend module, so the flow stays
 easy to reason about: `data → retrieval → agent → policies → audit → api`.
 
+The `data` layer (synthetic payments + ground-truth incidents) is
+implemented — see `docs/data_layer.md` for the full schema, incident
+patterns, and how to regenerate it.
+
 ## Running the project
 
 ### Backend
@@ -106,5 +110,6 @@ Never commit real `.env` files — only the `.env.example` templates.
 
 ## Status
 
-This is the initial scaffold only. See `docs/architecture.md` for what's
-built vs. what's still to come.
+Synthetic data + ground-truth incident generation is implemented (see
+`docs/data_layer.md`). Everything else is scaffold only. See
+`docs/architecture.md` for what's built vs. what's still to come.

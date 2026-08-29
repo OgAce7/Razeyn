@@ -1,11 +1,17 @@
 """
 Data layer: synthetic payment data + processing helpers.
 
-Responsible for: loading/generating synthetic payment transaction data
-(via pandas) that feeds the Incident Detection step.
+Implemented:
+- schema.py    Field names, enums, and value pools shared by the
+               generator and downstream consumers.
+- generate.py  Seeded generator that produces transactions.csv +
+               incidents.json (ground truth) under synthetic/. Run with
+               `python -m app.data.generate` to (re)build the dataset.
+- loader.py    load_transactions() / load_incidents() / load_incidents_list()
+               — the stable read interface for downstream code.
+- synthetic/   Generated output (gitignored; regenerate, don't hand-edit).
 
-Not implemented yet. Planned contents:
-- synthetic/           Raw synthetic data files (CSV/JSON)
-- generate.py          Script to (re)generate synthetic payment data
-- loader.py            Load synthetic data into pandas DataFrames / DB
+Not implemented yet (later steps):
+- Incident *detection* logic (this module only generates data with known
+  ground truth; detecting incidents from it is a separate component).
 """

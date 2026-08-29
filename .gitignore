@@ -5,6 +5,9 @@ __pycache__/
 venv/
 *.db
 
+# Generated synthetic dataset (reproducible via generate.py)
+backend/app/data/synthetic/
+
 # Env
 .env
 

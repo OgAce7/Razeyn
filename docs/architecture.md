@@ -4,8 +4,8 @@
 
 | Pipeline stage | Backend module | Status |
 |---|---|---|
-| Synthetic payment data | `app/data/` | scaffolded (empty) |
-| Incident Detection | `app/data/` or new `app/detection/` | not started |
+| Synthetic payment data | `app/data/` | **implemented** — see `docs/data_layer.md` |
+| Incident Detection | new `app/detection/` (not yet created) | not started |
 | Evidence Retrieval | `app/retrieval/` | scaffolded (empty) |
 | AI Investigation Agent | `app/agent/` | scaffolded (empty) |
 | Recovery Decision | `app/agent/` (produces recommendation) | not started |
