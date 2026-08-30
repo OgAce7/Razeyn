@@ -9,9 +9,9 @@
 | Evidence Retrieval | `app/retrieval/` | **implemented** — see `docs/retrieval.md` |
 | AI Investigation Agent | `app/agent/` | **implemented** — see `docs/agent.md` |
 | Recovery Decision | `app/agent/` (produces recommendation) | **implemented** — part of the agent's output, see `docs/agent.md` |
-| Policy / Guardrail | `app/policies/` | scaffolded (empty) — note: the agent module has its own internal deterministic guardrails (evidence/revenue/action integrity), but eligibility policy (which actions are allowed for a given incident) is still a separate, not-yet-built concern |
-| Recovery Action | `app/policies/actions.py` (execution/simulation) | not started |
-| Outcome + Audit Trail | `app/audit/` + `app/models/` | scaffolded (empty) |
+| Policy / Guardrail | `app/policies/` | **implemented** — see `docs/policy_engine.md` |
+| Recovery Action | `app/policies/executor.py` (execution/simulation) | **implemented** — bounded, simulated executor, see `docs/policy_engine.md` |
+| Outcome + Audit Trail | `app/audit/` + `app/models/` | scaffolded (empty) — note: `app/policies/ledger.py` already produces full `ActionRecord`s in-memory; persisting these durably is what remains |
 | Dashboard / Metrics | `frontend/src/` | not started (health check only) |
 
 ## Why this structure
@@ -40,10 +40,8 @@ Any future code that executes a recovery action should live under
 
 ## Explicitly not built yet
 
-- Policy engine (action eligibility rules, separate from the agent's own
-  internal evidence/revenue/action-legality guardrails)
-- Recovery action executor (actually sending a retry, recovery link, etc.)
-- Audit log persistence
+- Audit log persistence (durable storage of `ActionRecord`s — the record
+  schema and in-memory ledger already exist in `app/policies/ledger.py`)
 - Dashboard/metrics UI
 
 These are intentionally left out per the current build step so the

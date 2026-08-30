@@ -47,9 +47,9 @@ razeyn/
 │   │   ├── detection/           deterministic degradation detection engine (implemented, see docs/detection.md)
 │   │   ├── retrieval/          evidence retrieval, structured + unstructured (implemented, see docs/retrieval.md)
 │   │   ├── agent/               AI investigation + recovery-decision agent, Claude API (implemented, see docs/agent.md)
-│   │   ├── policies/            action eligibility / merchant policy engine (not yet implemented)
-│   │   └── audit/                audit trail logging (not yet implemented)
-│   ├── tests/                    pytest suite for detection + retrieval + agent
+│   │   ├── policies/            policy engine, guardrails, bounded executor (implemented, see docs/policy_engine.md)
+│   │   └── audit/                audit trail persistence (not yet implemented)
+│   ├── tests/                    pytest suite for detection + retrieval + agent + policies
 │   ├── requirements.txt
 │   └── .env.example
 ├── frontend/
@@ -116,7 +116,8 @@ Synthetic data + ground-truth incident generation is implemented (see
 `docs/data_layer.md`). The deterministic degradation detection engine is
 implemented (see `docs/detection.md`). The evidence retrieval layer is
 implemented (see `docs/retrieval.md`). The AI investigation and
-recovery-decision agent is implemented (see `docs/agent.md`). Everything
-else (policy engine, action executor, audit persistence, dashboard) is
-scaffold only. See `docs/architecture.md` for what's built vs. what's
-still to come.
+recovery-decision agent is implemented (see `docs/agent.md`). The
+deterministic policy, guardrail, and recovery-execution layer is
+implemented (see `docs/policy_engine.md`). What remains is audit-log
+persistence and the dashboard. See `docs/architecture.md` for what's
+built vs. what's still to come.
