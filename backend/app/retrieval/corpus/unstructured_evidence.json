@@ -1,0 +1,220 @@
+{
+  "documents": [
+    {
+      "doc_id": "doc_0001",
+      "type": "incident_report",
+      "source": "incident_archive/2026-08-12-hdfc-upi.md",
+      "timestamp": "2026-08-12T18:30:00+00:00",
+      "title": "UPI failures concentrated on HDFC Bank routing",
+      "text": "Between 13:00 and 18:00 UTC on Aug 12, UPI transactions routed through HDFC Bank showed a sharp rise in failed authorizations, predominantly timing out at the bank's end. Transactions through other issuing banks over the same window were unaffected. The pattern was isolated to the HDFC UPI routing path specifically, not UPI as a whole.",
+      "tags": ["UPI", "HDFC Bank", "bank_timeout", "network_error"]
+    },
+    {
+      "doc_id": "doc_0002",
+      "type": "merchant_note",
+      "source": "internal_ops_notes/merchant_support_log.csv",
+      "timestamp": "2026-08-12T15:10:00+00:00",
+      "title": "Support queue spike, UPI checkout failures",
+      "text": "Support ticket volume for 'payment failed' complaints roughly tripled in the early afternoon of Aug 12. Nearly all tickets we sampled mentioned UPI as the payment method, and where the customer's bank was mentioned, HDFC came up disproportionately often compared to a normal day.",
+      "tags": ["UPI", "HDFC Bank", "support_tickets"]
+    },
+    {
+      "doc_id": "doc_0003",
+      "type": "recovery_outcome",
+      "source": "recovery_ledger/2026-08-13.csv",
+      "timestamp": "2026-08-13T09:00:00+00:00",
+      "title": "Retry campaign results for Aug 12 HDFC UPI failures",
+      "text": "A retry notification was sent to customers whose UPI payment through HDFC failed during the Aug 12 window. Of the transactions retried within 24 hours, roughly 55% completed successfully on a second attempt, mostly using the same UPI handle.",
+      "tags": ["UPI", "HDFC Bank", "retry", "recovery"]
+    },
+    {
+      "doc_id": "doc_0004",
+      "type": "incident_report",
+      "source": "incident_archive/2026-08-15-wallet-gateway.md",
+      "timestamp": "2026-08-15T17:45:00+00:00",
+      "title": "Elevated wallet payment failures across all issuing banks",
+      "text": "Wallet-method transactions failed at a substantially higher rate for most of the business day on Aug 15, spanning every issuing bank and city in the dataset. Failures were dominated by gateway-side errors and risk-engine declines rather than bank timeouts, suggesting the issue sat with the wallet payment gateway itself rather than any specific bank or region.",
+      "tags": ["WALLET", "gateway_error", "risk_decline"]
+    },
+    {
+      "doc_id": "doc_0005",
+      "type": "provider_observation",
+      "source": "provider_status_page/wallet_gateway_history.json",
+      "timestamp": "2026-08-15T10:00:00+00:00",
+      "title": "Wallet gateway partner status note",
+      "text": "The wallet payment gateway partner's public status history shows a period of degraded performance for authorization requests on Aug 15, described by the partner as intermittent elevated error rates during a backend deployment window.",
+      "tags": ["WALLET", "gateway_error", "provider_status"]
+    },
+    {
+      "doc_id": "doc_0006",
+      "type": "recovery_outcome",
+      "source": "recovery_ledger/2026-08-16.csv",
+      "timestamp": "2026-08-16T08:00:00+00:00",
+      "title": "Wallet failure recovery campaign outcome",
+      "text": "A retry-and-notify campaign for wallet transactions that failed on Aug 15 recovered approximately 40% of affected revenue within 48 hours. Recovery rates were noticeably lower than typical bank-timeout retry campaigns, consistent with a larger share of the failures being risk declines rather than transient errors.",
+      "tags": ["WALLET", "retry", "recovery"]
+    },
+    {
+      "doc_id": "doc_0007",
+      "type": "incident_report",
+      "source": "incident_archive/2026-08-17-latency-spike.md",
+      "timestamp": "2026-08-17T21:15:00+00:00",
+      "title": "Broad processing latency increase, all payment methods",
+      "text": "For roughly two hours on the evening of Aug 17, processing latency rose across every payment method and every issuing bank simultaneously, with a corresponding increase in timeout-driven failures. No single method, bank, or city stood out individually; the pattern was uniform across the board, consistent with a shared upstream dependency rather than a bank- or method-specific problem.",
+      "tags": ["latency", "bank_timeout", "all_methods"]
+    },
+    {
+      "doc_id": "doc_0008",
+      "type": "provider_observation",
+      "source": "provider_status_page/switch_layer_notes.json",
+      "timestamp": "2026-08-17T20:00:00+00:00",
+      "title": "Switch layer maintenance window note",
+      "text": "A scheduled maintenance window at the payment switch layer was logged for the evening of Aug 17, overlapping with the period of elevated processing latency observed across all rails.",
+      "tags": ["latency", "maintenance_window", "all_methods"]
+    },
+    {
+      "doc_id": "doc_0009",
+      "type": "incident_report",
+      "source": "incident_archive/2026-08-20-chennai-network.md",
+      "timestamp": "2026-08-20T17:30:00+00:00",
+      "title": "Failure concentration in Chennai across multiple banks/methods",
+      "text": "From late morning to mid-afternoon on Aug 20, transactions geo-tagged to Chennai failed at a notably higher rate than other cities, spanning multiple payment methods and issuing banks. The failure mix leaned toward network errors and issuer declines rather than a single dominant reason, and the pattern did not appear in any other geography during the same window.",
+      "tags": ["Chennai", "geography", "network_error", "issuer_decline"]
+    },
+    {
+      "doc_id": "doc_0010",
+      "type": "merchant_note",
+      "source": "internal_ops_notes/regional_support_log.csv",
+      "timestamp": "2026-08-20T14:00:00+00:00",
+      "title": "Regional complaint cluster, Chennai",
+      "text": "A cluster of customer complaints referencing failed payments came in from users self-reporting a Chennai location during the afternoon of Aug 20. No equivalent spike was seen from other major cities that day.",
+      "tags": ["Chennai", "support_tickets"]
+    },
+    {
+      "doc_id": "doc_0011",
+      "type": "recovery_outcome",
+      "source": "recovery_ledger/2026-08-21.csv",
+      "timestamp": "2026-08-21T08:00:00+00:00",
+      "title": "Chennai incident retry outcome",
+      "text": "Retry attempts for transactions that failed during the Aug 20 Chennai-concentrated incident succeeded on second attempt roughly 48% of the time, broadly in line with typical network-error retry recovery rates.",
+      "tags": ["Chennai", "retry", "recovery"]
+    },
+    {
+      "doc_id": "doc_0012",
+      "type": "incident_report",
+      "source": "incident_archive/2026-07-03-icici-netbanking.md",
+      "timestamp": "2026-07-03T16:00:00+00:00",
+      "title": "Historical: ICICI netbanking degradation (unrelated period)",
+      "text": "In early July, netbanking transactions through ICICI Bank showed a temporary rise in failed authorizations over a three-hour window, attributed by the bank's own status page to a planned core-banking upgrade. This predates the current reporting period and is retained here as historical reference only.",
+      "tags": ["ICICI Bank", "NETBANKING", "historical"]
+    },
+    {
+      "doc_id": "doc_0013",
+      "type": "provider_observation",
+      "source": "provider_status_page/card_network_notes.json",
+      "timestamp": "2026-08-05T12:00:00+00:00",
+      "title": "Card network routine status, no incident",
+      "text": "Card network status checks for the first week of August showed nominal authorization success rates with no reported degradations across any issuing bank.",
+      "tags": ["CARD", "provider_status", "no_incident"]
+    },
+    {
+      "doc_id": "doc_0014",
+      "type": "merchant_note",
+      "source": "internal_ops_notes/general_kyc_notes.csv",
+      "timestamp": "2026-08-06T09:00:00+00:00",
+      "title": "KYC document review backlog (unrelated to payment failures)",
+      "text": "The merchant onboarding team flagged a backlog in KYC document review affecting new account activations. This is an onboarding process issue unrelated to payment processing failures and is included here only because it was logged in the same operational period.",
+      "tags": ["kyc", "onboarding", "unrelated"]
+    },
+    {
+      "doc_id": "doc_0015",
+      "type": "incident_report",
+      "source": "incident_archive/2026-08-22-flash-sale-volume.md",
+      "timestamp": "2026-08-22T22:15:00+00:00",
+      "title": "Volume spike during promotional flash sale, no degradation observed",
+      "text": "A promotional flash sale on Aug 22 drove roughly triple the normal transaction volume for a four-hour window. Failure rates during the spike stayed in line with the recent baseline across every payment method, bank, and city checked; nothing in the failure data distinguished this period from an ordinary high-traffic evening.",
+      "tags": ["volume_spike", "flash_sale", "no_incident"]
+    },
+    {
+      "doc_id": "doc_0016",
+      "type": "merchant_note",
+      "source": "internal_ops_notes/merchant_support_log.csv",
+      "timestamp": "2026-08-22T21:00:00+00:00",
+      "title": "Support queue during flash sale",
+      "text": "Support ticket volume rose in step with transaction volume during the Aug 22 flash sale, but the rate of 'payment failed' tickets per transaction stayed flat, consistent with the sale being a demand event rather than a payment-processing problem.",
+      "tags": ["volume_spike", "flash_sale", "support_tickets"]
+    },
+    {
+      "doc_id": "doc_0017",
+      "type": "provider_observation",
+      "source": "provider_status_page/upi_npci_notes.json",
+      "timestamp": "2026-08-12T13:30:00+00:00",
+      "title": "UPI switch partner note on bank-side timeouts",
+      "text": "The UPI switch partner's incident notes for Aug 12 reference elevated timeout responses specifically attributed to one issuing bank's authorization servers during the early-to-mid afternoon, consistent with a bank-side rather than switch-side bottleneck.",
+      "tags": ["UPI", "HDFC Bank", "bank_timeout", "provider_status"]
+    },
+    {
+      "doc_id": "doc_0018",
+      "type": "incident_report",
+      "source": "incident_archive/2026-06-18-axis-wallet.md",
+      "timestamp": "2026-06-18T11:00:00+00:00",
+      "title": "Historical: Axis Bank wallet top-up delays (unrelated period)",
+      "text": "In mid-June, wallet top-ups linked to Axis Bank accounts experienced processing delays over a single afternoon, resolved within a few hours. This incident predates the current reporting window and involved wallet top-ups specifically, not wallet checkout payments.",
+      "tags": ["Axis Bank", "WALLET", "historical"]
+    },
+    {
+      "doc_id": "doc_0019",
+      "type": "merchant_note",
+      "source": "internal_ops_notes/finance_reconciliation_notes.csv",
+      "timestamp": "2026-08-14T10:00:00+00:00",
+      "title": "Routine reconciliation note, no anomalies",
+      "text": "Weekly reconciliation of settled transactions against bank statements for the week of Aug 10 showed no unexplained discrepancies outside of the known HDFC UPI incident on Aug 12, which was already flagged separately.",
+      "tags": ["reconciliation", "HDFC Bank", "UPI"]
+    },
+    {
+      "doc_id": "doc_0020",
+      "type": "recovery_outcome",
+      "source": "recovery_ledger/2026-08-18.csv",
+      "timestamp": "2026-08-18T08:00:00+00:00",
+      "title": "Latency-spike incident retry outcome",
+      "text": "Transactions that failed during the Aug 17 latency spike were largely resolved on customer-initiated retry within the same session, since the underlying latency had returned to normal within roughly 20 minutes of the initial failures. Formal retry campaign recovery was therefore smaller in absolute terms than other incidents this period.",
+      "tags": ["latency", "retry", "recovery"]
+    },
+    {
+      "doc_id": "doc_0021",
+      "type": "incident_report",
+      "source": "incident_archive/2026-05-02-netbanking-sbi.md",
+      "timestamp": "2026-05-02T09:00:00+00:00",
+      "title": "Historical: State Bank of India netbanking outage (unrelated period)",
+      "text": "In early May, a State Bank of India netbanking outage affected transaction authorization for several hours, attributed by the bank to planned infrastructure work. This falls well outside the current August reporting window.",
+      "tags": ["State Bank of India", "NETBANKING", "historical"]
+    },
+    {
+      "doc_id": "doc_0022",
+      "type": "provider_observation",
+      "source": "provider_status_page/geography_network_notes.json",
+      "timestamp": "2026-08-20T12:00:00+00:00",
+      "title": "Telecom/network partner note, southern region",
+      "text": "A regional telecom partner's status advisory referenced intermittent connectivity issues in parts of the southern region during the same afternoon that Chennai-tagged transactions showed elevated payment failures.",
+      "tags": ["Chennai", "network_error", "provider_status"]
+    },
+    {
+      "doc_id": "doc_0023",
+      "type": "merchant_note",
+      "source": "internal_ops_notes/general_fraud_notes.csv",
+      "timestamp": "2026-08-09T09:00:00+00:00",
+      "title": "Routine fraud-rule tuning note (unrelated to payment failures)",
+      "text": "The risk team adjusted a velocity-based fraud rule threshold in early August as part of routine tuning. This was unrelated to any of the payment failure patterns observed later in the month.",
+      "tags": ["fraud_rules", "risk", "unrelated"]
+    },
+    {
+      "doc_id": "doc_0024",
+      "type": "recovery_outcome",
+      "source": "recovery_ledger/summary_playbook.md",
+      "timestamp": "2026-08-01T00:00:00+00:00",
+      "title": "General playbook note: retry timing for bank-timeout failures",
+      "text": "As a general pattern across past incidents, bank-timeout-driven failures have historically shown higher retry-recovery rates when the retry is attempted more than 30 minutes after the original failure, likely because the underlying bank-side congestion has cleared by then.",
+      "tags": ["retry", "playbook", "bank_timeout"]
+    }
+  ]
+}

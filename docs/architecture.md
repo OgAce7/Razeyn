@@ -6,10 +6,10 @@
 |---|---|---|
 | Synthetic payment data | `app/data/` | **implemented** — see `docs/data_layer.md` |
 | Incident Detection | `app/detection/` | **implemented** — see `docs/detection.md` |
-| Evidence Retrieval | `app/retrieval/` | scaffolded (empty) |
-| AI Investigation Agent | `app/agent/` | scaffolded (empty) |
-| Recovery Decision | `app/agent/` (produces recommendation) | not started |
-| Policy / Guardrail | `app/policies/` | scaffolded (empty) |
+| Evidence Retrieval | `app/retrieval/` | **implemented** — see `docs/retrieval.md` |
+| AI Investigation Agent | `app/agent/` | **implemented** — see `docs/agent.md` |
+| Recovery Decision | `app/agent/` (produces recommendation) | **implemented** — part of the agent's output, see `docs/agent.md` |
+| Policy / Guardrail | `app/policies/` | scaffolded (empty) — note: the agent module has its own internal deterministic guardrails (evidence/revenue/action integrity), but eligibility policy (which actions are allowed for a given incident) is still a separate, not-yet-built concern |
 | Recovery Action | `app/policies/actions.py` (execution/simulation) | not started |
 | Outcome + Audit Trail | `app/audit/` + `app/models/` | scaffolded (empty) |
 | Dashboard / Metrics | `frontend/src/` | not started (health check only) |
@@ -40,9 +40,9 @@ Any future code that executes a recovery action should live under
 
 ## Explicitly not built yet
 
-- Evidence retrieval implementation (structured + unstructured)
-- The agent itself (tool use, prompting, diagnosis)
-- Guardrail rules and allowed-action definitions
+- Policy engine (action eligibility rules, separate from the agent's own
+  internal evidence/revenue/action-legality guardrails)
+- Recovery action executor (actually sending a retry, recovery link, etc.)
 - Audit log persistence
 - Dashboard/metrics UI
 

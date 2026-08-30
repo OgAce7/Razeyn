@@ -45,11 +45,11 @@ razeyn/
 │   │   ├── models/            SQLAlchemy tables (not yet implemented)
 │   │   ├── data/                synthetic payment data + loaders (implemented, see docs/data_layer.md)
 │   │   ├── detection/           deterministic degradation detection engine (implemented, see docs/detection.md)
-│   │   ├── retrieval/          evidence retrieval (structured + unstructured) (not yet implemented)
-│   │   ├── agent/               AI investigation agent (Claude) (not yet implemented)
-│   │   ├── policies/            deterministic guardrails + allowed actions (not yet implemented)
+│   │   ├── retrieval/          evidence retrieval, structured + unstructured (implemented, see docs/retrieval.md)
+│   │   ├── agent/               AI investigation + recovery-decision agent, Claude API (implemented, see docs/agent.md)
+│   │   ├── policies/            action eligibility / merchant policy engine (not yet implemented)
 │   │   └── audit/                audit trail logging (not yet implemented)
-│   ├── tests/                    pytest suite for the detection engine
+│   ├── tests/                    pytest suite for detection + retrieval + agent
 │   ├── requirements.txt
 │   └── .env.example
 ├── frontend/
@@ -114,5 +114,9 @@ Never commit real `.env` files — only the `.env.example` templates.
 
 Synthetic data + ground-truth incident generation is implemented (see
 `docs/data_layer.md`). The deterministic degradation detection engine is
-implemented (see `docs/detection.md`). Everything else is scaffold only.
-See `docs/architecture.md` for what's built vs. what's still to come.
+implemented (see `docs/detection.md`). The evidence retrieval layer is
+implemented (see `docs/retrieval.md`). The AI investigation and
+recovery-decision agent is implemented (see `docs/agent.md`). Everything
+else (policy engine, action executor, audit persistence, dashboard) is
+scaffold only. See `docs/architecture.md` for what's built vs. what's
+still to come.

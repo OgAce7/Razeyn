@@ -8,6 +8,9 @@ venv/
 # Generated synthetic dataset (reproducible via generate.py)
 backend/app/data/synthetic/
 
+# Local embedding cache (reproducible via vector_store.py on first run)
+backend/app/retrieval/store/*.json
+
 # pytest cache
 .pytest_cache/
 
