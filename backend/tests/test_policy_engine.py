@@ -87,8 +87,12 @@ def test_retry_limit_exceeded_excludes_transaction():
     incident = make_incident()
     txn = make_txn("txn_1", 500.0)
 
-    # Simulate 3 prior successful retries directly via the ledger by running
-    # execute_action 3 times with cooldown bypassed (advance `now` each time).
+    # Simulate 3 prior retry attempts by running execute_action 3 times
+    # with cooldown bypassed (advance `now` each time). txn_1's simulated
+    # outcome never succeeds (see app/policies/adapter.py's deterministic
+    # hash), so this exercises the "repeated recovery failure" path: the
+    # transaction genuinely exhausts its retry budget without ever
+    # recovering.
     for i in range(3):
         d = evaluate_policy(
             "RETRY_ELIGIBLE_PAYMENTS", incident, [txn], confidence=0.8, revenue_at_risk=500.0,
@@ -97,15 +101,76 @@ def test_retry_limit_exceeded_excludes_transaction():
         assert d.approved is True, f"attempt {i} should still be within the limit"
         execute_action("RETRY_ELIGIBLE_PAYMENTS", d, incident, [txn], ledger, now=NOW + timedelta(hours=i))
 
-    # 4th attempt: per-transaction retry limit (default 3) is now exhausted.
+    # 4th attempt: per-transaction retry limit (default 3) is now exhausted
+    # with zero successes on record -- this is a dead end for further
+    # automated retries, so rather than a silent, indistinguishable
+    # rejection, the decision escalates to a human with a clear reason.
     d4 = evaluate_policy(
         "RETRY_ELIGIBLE_PAYMENTS", incident, [txn], confidence=0.8, revenue_at_risk=500.0,
         ledger=ledger, now=NOW + timedelta(hours=10),
     )
-    assert d4.approved is False
+    assert d4.approved is True
+    assert d4.escalation_required is True
+    assert "exhausted" in d4.reason.lower()
     assert any(
         c.name == "retry_attempt_limit" and not c.passed for c in d4.policy_checks
     )
+    assert any(
+        c.name == "retry_budget_exhausted_escalation" for c in d4.policy_checks
+    )
+
+
+def test_retry_limit_exhaustion_escalation_does_not_fire_when_merchant_disabled_retries():
+    """A merchant deliberately disabling auto-retry (max_retry_attempts_per_transaction
+    forced to 0) is an intentional opt-out, not a failure -- it must stay
+    a clean rejection, not escalate as if retries had genuinely been
+    attempted and failed. See test_merchant_can_disable_auto_retry_entirely."""
+    ledger = ActionLedger()
+    incident = make_incident()
+    txn = make_txn("txn_1", 500.0)
+    decision = evaluate_policy(
+        "RETRY_ELIGIBLE_PAYMENTS", incident, [txn], confidence=0.9, revenue_at_risk=500.0,
+        ledger=ledger, now=NOW, merchant_policies={"auto_retry_enabled": False},
+    )
+    assert decision.approved is False
+    assert decision.escalation_required is False
+    assert not any(c.name == "retry_budget_exhausted_escalation" for c in decision.policy_checks)
+
+
+def test_retry_limit_exhaustion_escalation_does_not_fire_when_cooldown_also_active():
+    """If SOME transactions are merely in cooldown (will become eligible
+    again later) rather than ALL being permanently retry-exhausted, this
+    is not a dead end yet -- it should stay a plain rejection, not
+    escalate prematurely."""
+    ledger = ActionLedger()
+    incident = make_incident()
+    exhausted_txn = make_txn("txn_exhausted", 500.0)
+    fresh_txn = make_txn("txn_fresh", 500.0)
+
+    for i in range(3):
+        d = evaluate_policy(
+            "RETRY_ELIGIBLE_PAYMENTS", incident, [exhausted_txn], confidence=0.8, revenue_at_risk=500.0,
+            ledger=ledger, now=NOW + timedelta(hours=i),
+        )
+        execute_action("RETRY_ELIGIBLE_PAYMENTS", d, incident, [exhausted_txn], ledger, now=NOW + timedelta(hours=i))
+
+    # fresh_txn retried once, still within its cooldown window at t+10h
+    d_fresh = evaluate_policy(
+        "RETRY_ELIGIBLE_PAYMENTS", incident, [fresh_txn], confidence=0.8, revenue_at_risk=500.0,
+        ledger=ledger, now=NOW + timedelta(hours=9, minutes=50),
+    )
+    execute_action("RETRY_ELIGIBLE_PAYMENTS", d_fresh, incident, [fresh_txn], ledger, now=NOW + timedelta(hours=9, minutes=50))
+
+    # Now both are excluded, but for DIFFERENT reasons (retry exhaustion
+    # vs cooldown) -- must not escalate, since fresh_txn will become
+    # eligible again shortly.
+    combined = evaluate_policy(
+        "RETRY_ELIGIBLE_PAYMENTS", incident, [exhausted_txn, fresh_txn], confidence=0.8, revenue_at_risk=1000.0,
+        ledger=ledger, now=NOW + timedelta(hours=10),
+    )
+    assert combined.approved is False
+    assert combined.escalation_required is False
+    assert not any(c.name == "retry_budget_exhausted_escalation" for c in combined.policy_checks)
 
 
 def test_incident_level_retry_budget_enforced():

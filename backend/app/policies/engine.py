@@ -34,6 +34,16 @@ ACTIONABLE_ACTIONS = frozenset(
     {"RETRY_ELIGIBLE_PAYMENTS", "OFFER_ALTERNATE_METHOD", "SEND_RECOVERY_LINK", "NOTIFY_MERCHANT"}
 )
 
+# The only severities the detection engine ever produces (see
+# app/detection/stats.severity_from). An incident dict with a severity
+# outside this set (missing, None, or a typo/corrupted value) has failed
+# to give this engine enough information to apply the severity-based
+# STOP/ESCALATE rules below -- rather than silently falling through as
+# "not in the stop set, not in the escalate set" and defaulting to full
+# automated approval, that case is treated the same as the forced-
+# ESCALATE severities: require a human before any action.
+KNOWN_SEVERITIES = frozenset({"LOW", "MEDIUM", "HIGH", "CRITICAL"})
+
 
 @dataclass
 class PolicyDecision:
@@ -117,6 +127,22 @@ def evaluate_policy(
 
     # 3. Forced STOP conditions (severity, immaterial revenue) ---------------
     severity = incident.get("severity")
+
+    if severity not in KNOWN_SEVERITIES:
+        checks.append(PolicyCheckResult(
+            "severity_recognized",
+            False,
+            f"Incident severity {severity!r} is missing or not one of the recognized values "
+            f"{sorted(KNOWN_SEVERITIES)}; cannot apply severity-based automation rules safely.",
+        ))
+        return PolicyDecision(
+            approved=True,
+            escalation_required=True,
+            reason=f"Forced ESCALATE: incident severity {severity!r} is missing or unrecognized.",
+            policy_checks=checks,
+        )
+    checks.append(PolicyCheckResult("severity_recognized", True, f"Severity {severity!r} is a recognized value."))
+
     if severity in policy.stop_severities:
         checks.append(PolicyCheckResult("forced_stop_severity", False, f"Incident severity {severity!r} is in the forced-STOP set {sorted(policy.stop_severities)}."))
         return PolicyDecision(approved=False, escalation_required=False, reason=f"Forced STOP: incident severity {severity!r} does not warrant automated recovery.", policy_checks=checks)
@@ -148,7 +174,7 @@ def evaluate_policy(
         return PolicyDecision(approved=True, escalation_required=False, reason="NOTIFY_MERCHANT approved.", policy_checks=checks, eligible_transaction_ids=[t["transaction_id"] for t in transactions], expected_revenue_recovery=0.0)
 
     # 6. Transaction-level eligibility (amount, status, retry limit, cooldown) --
-    eligible, txn_checks = _filter_eligible_transactions(
+    eligible, txn_checks, exclusion_counts = _filter_eligible_transactions(
         recommended_action, transactions, policy, ledger, incident.get("incident_id", ""), now
     )
     checks.extend(txn_checks)
@@ -159,9 +185,52 @@ def evaluate_policy(
             eligible, policy, ledger, incident.get("incident_id", "")
         )
         checks.extend(contact_checks)
+        if len(eligible) < exclusion_counts.get("_pre_contact_eligible_count", len(eligible)):
+            exclusion_counts["contact_limit"] = exclusion_counts.get("_pre_contact_eligible_count", 0) - len(eligible)
 
     if not eligible:
         checks.append(PolicyCheckResult("eligible_transactions_remaining", False, "No transactions remain eligible after policy filtering."))
+        # Distinguish "will become eligible again later" (cooldown) from
+        # "has permanently exhausted its retry budget after genuinely
+        # being attempted" (retry_limit with a nonzero budget) from "a
+        # merchant has deliberately disabled auto-retry entirely"
+        # (max_retry_attempts_per_transaction == 0, which is a clean,
+        # intentional opt-out, not a failure needing escalation). A
+        # rejection caused ENTIRELY by retry exhaustion -- with retries
+        # actually enabled, and no transactions merely waiting out a
+        # cooldown -- means retrying this incident automatically will
+        # never make progress and a human should be looped in rather
+        # than the caller silently re-trying (or a scheduler silently
+        # re-polling) forever with no path to resolution. See
+        # docs/policy_engine.md and the "repeated recovery failure" QA
+        # scenario.
+        retry_exhausted_only = (
+            recommended_action == "RETRY_ELIGIBLE_PAYMENTS"
+            and policy.max_retry_attempts_per_transaction > 0
+            and exclusion_counts.get("retry", 0) > 0
+            and exclusion_counts.get("cooldown", 0) == 0
+            and exclusion_counts.get("amount", 0) == 0
+            and exclusion_counts.get("status", 0) == 0
+            and exclusion_counts.get("already_recovered", 0) == 0
+            and exclusion_counts.get("contact_limit", 0) == 0
+        )
+        if retry_exhausted_only:
+            checks.append(PolicyCheckResult(
+                "retry_budget_exhausted_escalation",
+                False,
+                f"All {exclusion_counts['retry']} transaction(s) have permanently exhausted their "
+                f"per-transaction retry limit ({policy.max_retry_attempts_per_transaction}); automated "
+                "retrying cannot make further progress on this incident. Escalating for human review.",
+            ))
+            return PolicyDecision(
+                approved=True,
+                escalation_required=True,
+                reason=(
+                    "Forced ESCALATE: every remaining transaction has exhausted its automated retry "
+                    "budget with no successful recovery; further automated retries would not help."
+                ),
+                policy_checks=checks,
+            )
         return PolicyDecision(approved=False, escalation_required=False, reason="Rejected: no transactions are eligible for this action after applying amount, retry, cooldown, and contact-limit policies.", policy_checks=checks)
     checks.append(PolicyCheckResult("eligible_transactions_remaining", True, f"{len(eligible)} of {len(transactions)} transaction(s) remain eligible."))
 
@@ -202,7 +271,7 @@ def evaluate_policy(
 def _filter_eligible_transactions(action, transactions, policy, ledger, incident_id, now):
     checks = []
     eligible = []
-    excluded_amount = excluded_status = excluded_retry = excluded_cooldown = 0
+    excluded_amount = excluded_status = excluded_retry = excluded_cooldown = excluded_already_recovered = 0
 
     for t in transactions:
         txn_id = t["transaction_id"]
@@ -217,6 +286,9 @@ def _filter_eligible_transactions(action, transactions, policy, ledger, incident
             continue
 
         if action == "RETRY_ELIGIBLE_PAYMENTS":
+            if ledger.already_succeeded(txn_id, action):
+                excluded_already_recovered += 1
+                continue
             if ledger.retry_count(txn_id) >= policy.max_retry_attempts_per_transaction:
                 excluded_retry += 1
                 continue
@@ -243,6 +315,12 @@ def _filter_eligible_transactions(action, transactions, policy, ledger, incident
             f"{excluded_status} transaction(s) were not in FAILED status and cannot be retried.",
         ))
         checks.append(PolicyCheckResult(
+            "already_recovered",
+            excluded_already_recovered == 0,
+            f"{excluded_already_recovered} transaction(s) already have a successful retry on record "
+            "and were excluded to prevent double-counting recovered revenue.",
+        ))
+        checks.append(PolicyCheckResult(
             "retry_attempt_limit",
             excluded_retry == 0,
             f"{excluded_retry} transaction(s) already reached the per-transaction retry limit "
@@ -254,7 +332,15 @@ def _filter_eligible_transactions(action, transactions, policy, ledger, incident
         f"{excluded_cooldown} transaction(s) are within the {policy.cooldown_minutes}-minute cooldown "
         "since their last automated action and were excluded.",
     ))
-    return eligible, checks
+    exclusion_counts = {
+        "amount": excluded_amount,
+        "status": excluded_status,
+        "already_recovered": excluded_already_recovered,
+        "retry": excluded_retry,
+        "cooldown": excluded_cooldown,
+        "_pre_contact_eligible_count": len(eligible),
+    }
+    return eligible, checks, exclusion_counts
 
 
 def _filter_by_contact_limit(transactions, policy, ledger, incident_id):

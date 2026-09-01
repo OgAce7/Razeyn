@@ -116,6 +116,25 @@ class ActionLedger:
             if r.requested_action == action
         )
 
+    def already_succeeded(self, transaction_id: str, action: str = "RETRY_ELIGIBLE_PAYMENTS") -> bool:
+        """True if a PAST action of this type on this transaction already
+        recorded a per-transaction SUCCESS outcome. Used to stop a
+        transaction from being retried again once it has already been
+        recovered -- without this check, a transaction that succeeds on
+        retry remains eligible again once the cooldown window passes
+        (nothing in the underlying transaction record itself flips from
+        FAILED to SUCCESS, since this ledger/policy layer never mutates
+        the transaction dataset it's given), which would silently
+        double-count recovered revenue for the same transaction. See
+        per_transaction entries recorded by app/policies/executor.py."""
+        for r in self._executed_records_for_transaction(transaction_id):
+            if r.requested_action != action:
+                continue
+            for item in r.actual_result.get("per_transaction", []):
+                if item.get("transaction_id") == transaction_id and item.get("outcome") == "SUCCESS":
+                    return True
+        return False
+
     def total_retries_for_incident(self, incident_id: str, action: str = "RETRY_ELIGIBLE_PAYMENTS") -> int:
         return sum(
             len(r.transaction_ids)
