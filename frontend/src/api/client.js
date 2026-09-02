@@ -41,6 +41,8 @@ export const ENDPOINTS = {
   auditTrail: `${API_BASE}/evaluation/audit-trail`,
   evaluationReport: `${API_BASE}/evaluation/report`,
   evidence: (incidentId) => `${API_BASE}/evidence/${incidentId}`,
+  incident: (incidentId) => `${API_BASE}/incidents/${incidentId}`,
+  incidentDecision: (incidentId) => `${API_BASE}/incidents/${incidentId}/decision`,
 };
 
 async function fetchJson(url) {
@@ -104,4 +106,42 @@ export async function getEvidence(incidentId) {
     if (!err.notImplemented) throw err;
     return { data: MOCK_EVIDENCE_BUNDLES[incidentId] ?? null, source: "mock" };
   }
+}
+
+/**
+ * Approve or reject an escalated incident. This is a real, state-changing
+ * call -- it has NO mock fallback, unlike every read above. If the
+ * backend endpoint isn't reachable, callers should surface that as a
+ * genuine error, not silently pretend the action succeeded against fake
+ * data (that would be actively misleading for something that claims to
+ * approve/reject a real recovery action).
+ *
+ * @param {string} incidentId
+ * @param {"approve"|"reject"} decision
+ * @returns {Promise<import('./types.js').AuditRecord>} the new, resolved
+ *   AuditRecord for this incident (superseding the escalated one).
+ */
+export async function decideIncident(incidentId, decision) {
+  const res = await fetch(ENDPOINTS.incidentDecision(incidentId), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ decision }),
+  });
+  if (!res.ok) {
+    let detail;
+    try {
+      detail = (await res.json()).detail;
+    } catch {
+      // response body wasn't JSON -- fall through with no detail
+    }
+    const message =
+      typeof detail === "string"
+        ? detail
+        : detail?.message || `Decision request failed with status ${res.status}`;
+    const err = new Error(message);
+    err.status = res.status;
+    err.detail = detail;
+    throw err;
+  }
+  return res.json();
 }

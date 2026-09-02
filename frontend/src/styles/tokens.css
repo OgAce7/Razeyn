@@ -292,3 +292,59 @@ button.btn-ghost:hover {
   background: var(--bg-card-hover);
   color: var(--text-primary);
 }
+
+button.btn-positive {
+  background: var(--positive-soft);
+  color: var(--positive);
+  border: 1px solid rgba(51, 214, 159, 0.3);
+}
+button.btn-positive:hover {
+  background: rgba(51, 214, 159, 0.22);
+}
+
+button.btn-negative {
+  background: var(--negative-soft);
+  color: var(--negative);
+  border: 1px solid rgba(255, 107, 122, 0.3);
+}
+button.btn-negative:hover {
+  background: rgba(255, 107, 122, 0.22);
+}
+/* .btn-negative.btn-ghost: reject action styled as a lower-emphasis
+   outline rather than a filled negative button, so approve stays the
+   visually primary action -- overrides the plain .btn-ghost background. */
+button.btn-negative.btn-ghost {
+  background: transparent;
+  color: var(--negative);
+  border: 1px solid rgba(255, 107, 122, 0.35);
+}
+button.btn-negative.btn-ghost:hover {
+  background: var(--negative-soft);
+}
+
+button.btn:disabled,
+button.btn-ghost:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.pending-decision-panel {
+  border: 1px solid rgba(245, 185, 66, 0.35);
+  background: var(--warning-soft);
+  border-radius: var(--radius-md, 10px);
+  padding: 16px 18px;
+  margin-bottom: 20px;
+}
+
+.decision-toast {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--positive);
+  background: var(--positive-soft);
+  border-radius: var(--radius-sm);
+  padding: 6px 12px;
+  margin-bottom: 14px;
+}

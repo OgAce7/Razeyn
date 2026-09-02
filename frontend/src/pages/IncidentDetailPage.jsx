@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { getAuditTrail, getEvidence } from "../api/client.js";
 import { useApiData } from "../lib/useApiData.js";
@@ -8,6 +8,7 @@ import { EvidencePanel } from "../components/EvidencePanel.jsx";
 import { AiDecisionPanel } from "../components/AiDecisionPanel.jsx";
 import { RecoveryExecutionPanel } from "../components/RecoveryExecutionPanel.jsx";
 import { RecoveryOutcomePanel } from "../components/RecoveryOutcomePanel.jsx";
+import { ApproveRejectPanel } from "../components/ApproveRejectPanel.jsx";
 import { findRecordByIncidentId, revenueRecoveredForRecord, baselineVsCurrent } from "../lib/derive.js";
 
 export default function IncidentDetailPage() {
@@ -15,15 +16,33 @@ export default function IncidentDetailPage() {
   const auditState = useApiData(getAuditTrail, []);
   const evidenceState = useApiData(() => getEvidence(incidentId), [incidentId]);
 
-  const record = useMemo(
-    () => (auditState.data ? findRecordByIncidentId(auditState.data, incidentId) : null),
-    [auditState.data, incidentId]
-  );
+  // Holds the freshly-resolved record returned directly by
+  // POST /decision, so the UI updates the instant the call succeeds
+  // rather than waiting on a second round-trip to re-fetch the audit
+  // trail. Cleared whenever the route/incidentId changes.
+  const [resolvedOverride, setResolvedOverride] = useState(null);
+  const [justResolvedDecision, setJustResolvedDecision] = useState(null);
+
+  const record = useMemo(() => {
+    if (resolvedOverride && resolvedOverride.detection.candidate_incident_id === incidentId) {
+      return resolvedOverride;
+    }
+    return auditState.data ? findRecordByIncidentId(auditState.data, incidentId) : null;
+  }, [auditState.data, incidentId, resolvedOverride]);
 
   const beforeAfter = useMemo(() => baselineVsCurrent(evidenceState.data), [evidenceState.data]);
 
   const loading = auditState.loading || evidenceState.loading;
   const error = auditState.error || evidenceState.error;
+
+  function handleResolved(newRecord) {
+    setResolvedOverride(newRecord);
+    setJustResolvedDecision(newRecord.policy_decision.approved ? "approve" : "reject");
+    // Also refresh the underlying audit trail in the background so list
+    // views (IncidentsPage) and any future navigation away-and-back see
+    // the same resolved state, not just this page's local override.
+    auditState.reload();
+  }
 
   if (!loading && !error && auditState.data && !record) {
     return (
@@ -53,14 +72,22 @@ export default function IncidentDetailPage() {
       {!error && (loading ? (
         <LoadingBlock height={520} />
       ) : record ? (
-        <IncidentDetailBody record={record} evidenceBundle={evidenceState.data} beforeAfter={beforeAfter} />
+        <IncidentDetailBody
+          incidentId={incidentId}
+          record={record}
+          evidenceBundle={evidenceState.data}
+          beforeAfter={beforeAfter}
+          onResolved={handleResolved}
+          justResolvedDecision={justResolvedDecision}
+        />
       ) : null)}
     </div>
   );
 }
 
-function IncidentDetailBody({ record, evidenceBundle, beforeAfter }) {
+function IncidentDetailBody({ incidentId, record, evidenceBundle, beforeAfter, onResolved, justResolvedDecision }) {
   const recovered = revenueRecoveredForRecord(record);
+  const isPendingDecision = record.action_outcome.execution_status === "NOT_EXECUTED_ESCALATED";
 
   return (
     <>
@@ -102,6 +129,17 @@ function IncidentDetailBody({ record, evidenceBundle, beforeAfter }) {
         <p className="text-secondary" style={styles.panelIntro}>
           Every deterministic policy check the recommended action had to pass before it could run.
         </p>
+
+        {!isPendingDecision && justResolvedDecision && (
+          <div className="decision-toast">
+            {justResolvedDecision === "approve" ? "✓ Approved and executed" : "✓ Rejected"}
+          </div>
+        )}
+
+        {isPendingDecision && (
+          <ApproveRejectPanel incidentId={incidentId} onResolved={onResolved} />
+        )}
+
         <RecoveryExecutionPanel policyDecision={record.policy_decision} actionOutcome={record.action_outcome} />
       </section>
 
