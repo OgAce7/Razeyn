@@ -17,10 +17,20 @@ expose that PolicyDecision, so it can't be reused as-is here without
 either changing its signature (touching tested, working code) or
 duplicating its ~15 lines of loop body. This duplicates the loop body
 only -- every call inside it is the same real function.
+
+Also runs against uploaded datasets (see run_pipeline_for_dataset's
+`transactions_df` / `candidate_incidents` parameters and
+app/api/datasets.py), which is why evidence retrieval goes through
+retrieve_evidence_for_incident (candidate dict in memory) rather than
+retrieve_evidence (candidate looked up on disk by id) -- an uploaded
+dataset's candidates are never written to
+app/data/synthetic/candidate_incidents.json.
 """
 
 from __future__ import annotations
 
+import uuid
+from datetime import datetime, timezone
 from typing import Any
 
 import pandas as pd
@@ -35,9 +45,9 @@ from app.detection.detector import detect_incidents
 from app.policies.engine import evaluate_policy
 from app.policies.executor import EXECUTION_NOT_EXECUTED_ESCALATED, execute_action
 from app.retrieval.structured import resolve_segment_mask
-from app.retrieval.bundle import retrieve_evidence
+from app.retrieval.bundle import retrieve_evidence_for_incident
 
-from app.api.state import AppState, PendingDecision
+from app.api.state import AppState, DatasetInfo, PendingDecision
 
 
 def _resolve_window_transaction_ids(candidate: dict[str, Any], transactions_df: pd.DataFrame) -> list[str]:
@@ -67,14 +77,15 @@ def run_pipeline_for_dataset(
 ) -> None:
     """Run detection (if candidates not already supplied) -> retrieval ->
     agent -> policy -> executor for every candidate, against `state`'s
-    shared ledger/store. Appends to state.audit_store and populates
+    CURRENT ledger/store. Appends to state.audit_store and populates
     state.pending for any incident that comes out escalated.
 
-    Does not clear existing audit_store/pending -- callers that want a
-    clean slate (e.g. a fresh dataset upload replacing the active one)
-    should build a fresh AppState, not reuse this to "re-run" the same
-    incidents (see app/api/state.py's docstring on why a single
-    long-lived ledger matters).
+    Callers (seed_from_synthetic_dataset, run_uploaded_dataset) are
+    responsible for calling state.swap_dataset() BEFORE this, so it
+    always runs against a freshly-cleared ledger/store for the dataset
+    being processed -- this function itself does not clear anything, so
+    calling it twice in a row without an intervening swap_dataset() would
+    append to (not replace) the previous run's records.
     """
     transactions_by_id = {
         row["transaction_id"]: row for row in transactions_df.to_dict(orient="records")
@@ -88,16 +99,11 @@ def run_pipeline_for_dataset(
     for candidate in candidate_incidents:
         incident_id = candidate["incident_id"]
 
-        # retrieve_evidence looks up the candidate incident itself (by id,
-        # from the on-disk detection output) rather than taking our
-        # `candidate` dict directly -- fine for today's seeded-dataset-only
-        # scope, since detect_incidents() and this candidate list both
-        # ultimately come from the same synthetic transactions.csv. This is
-        # a real constraint to revisit when upload (item 2) lands: uploaded
-        # data's candidates won't be on disk at CANDIDATE_INCIDENTS_PATH,
-        # so retrieve_evidence (or its structured-evidence computation)
-        # will need a variant that accepts the candidate dict in-memory.
-        evidence = retrieve_evidence(incident_id=incident_id, transactions=transactions_df)
+        # retrieve_evidence_for_incident takes the candidate dict directly
+        # (no on-disk lookup) -- this is what makes evidence retrieval
+        # work for both the seeded dataset and, now, uploaded datasets
+        # whose candidates never touch disk. See app/retrieval/bundle.py.
+        evidence = retrieve_evidence_for_incident(candidate, transactions_df)
         structured = evidence.get("structured_evidence") or []
         unstructured = evidence.get("unstructured_evidence") or []
 
@@ -166,9 +172,64 @@ def seed_from_synthetic_dataset(state: AppState) -> None:
     transactions_df = load_transactions()
     ground_truth_list = load_incidents_list()
     ground_truth_by_id = {gt["incident_id"]: gt for gt in ground_truth_list}
+
+    candidate_incidents = detect_incidents(transactions_df, DEFAULT_CONFIG)
+
+    info = DatasetInfo(
+        dataset_id="seeded",
+        label="Seeded synthetic dataset",
+        kind="seeded",
+        row_count=len(transactions_df),
+        candidate_count=len(candidate_incidents),
+    )
+    state.swap_dataset(info)
+
     run_pipeline_for_dataset(
         state,
         transactions_df,
+        candidate_incidents=candidate_incidents,
         ground_truth_by_incident_id=ground_truth_by_id,
     )
-    state.active_dataset_label = "seeded synthetic dataset"
+
+
+def run_uploaded_dataset(
+    state: AppState,
+    transactions_df: pd.DataFrame,
+    original_filename: str | None = None,
+) -> DatasetInfo:
+    """Run detection + the full pipeline against an uploaded, validated
+    transactions DataFrame, and make it the active dataset -- REPLACING
+    whatever was active before (seeded dataset or a previous upload), not
+    merging with it. See AppState.swap_dataset for why a full swap is the
+    right semantics here (one live dataset in the dashboard at a time).
+
+    No ground truth is available for uploaded data (there's no
+    incidents.json for it), so AuditRecords from this run simply have
+    ground_truth=None -- detection-accuracy metrics that require it are
+    skipped rather than faked, same as any live (non-synthetic)
+    deployment per app/audit/schema.py's own design note.
+
+    Returns the DatasetInfo describing the run, so the API layer can
+    report row/candidate counts back to the caller.
+    """
+    candidate_incidents = detect_incidents(transactions_df, DEFAULT_CONFIG)
+
+    dataset_id = f"upload_{uuid.uuid4().hex[:10]}"
+    info = DatasetInfo(
+        dataset_id=dataset_id,
+        label=original_filename or f"Uploaded dataset ({dataset_id})",
+        kind="uploaded",
+        row_count=len(transactions_df),
+        candidate_count=len(candidate_incidents),
+        uploaded_at=datetime.now(timezone.utc).isoformat(),
+        original_filename=original_filename,
+    )
+    state.swap_dataset(info)
+
+    run_pipeline_for_dataset(
+        state,
+        transactions_df,
+        candidate_incidents=candidate_incidents,
+        ground_truth_by_incident_id=None,
+    )
+    return info

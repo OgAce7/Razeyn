@@ -2,6 +2,7 @@ import React, { useMemo } from "react";
 import { Link } from "react-router-dom";
 import { getAuditTrail, getEvaluationReport } from "../api/client.js";
 import { useApiData } from "../lib/useApiData.js";
+import { useDataset } from "../lib/DatasetContext.jsx";
 import { DemoBadge, LoadingBlock, ErrorState } from "../components/Primitives.jsx";
 import { KpiCard } from "../components/KpiCard.jsx";
 import { IncidentTimeline } from "../components/IncidentTimeline.jsx";
@@ -17,8 +18,9 @@ import {
 import { formatMoney, formatPercent, formatNumber } from "../lib/format.js";
 
 export default function OverviewPage() {
-  const auditState = useApiData(getAuditTrail, []);
-  const reportState = useApiData(getEvaluationReport, []);
+  const { datasetVersion, activeDataset } = useDataset();
+  const auditState = useApiData(getAuditTrail, [datasetVersion]);
+  const reportState = useApiData(getEvaluationReport, [datasetVersion]);
 
   const timelineRows = useMemo(
     () => (auditState.data ? toTimelineRows(auditState.data) : []),

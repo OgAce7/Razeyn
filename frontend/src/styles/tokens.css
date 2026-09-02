@@ -15,6 +15,8 @@
   --accent: #4ea8ff;
   --accent-soft: #1c3a5e;
   --accent-strong: #7cc4ff;
+  --accent-muted-fill: rgba(78, 168, 255, 0.28);
+  --on-accent: #03101f;
 
   --positive: #33d69f;
   --positive-soft: #143a2c;
@@ -28,6 +30,10 @@
   --sev-high: #ff9a4e;
   --sev-critical: #ff6b7a;
 
+  --hover-overlay: rgba(255, 255, 255, 0.03);
+  --bg-radial-1: rgba(78, 168, 255, 0.08);
+  --bg-radial-2: rgba(124, 196, 255, 0.05);
+
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 18px;
@@ -38,6 +44,56 @@
   --font-mono: "IBM Plex Mono", "SF Mono", Menlo, monospace;
 
   color-scheme: dark;
+}
+
+/* ---------- Light theme ----------
+   Not an inverted dark theme -- a distinct palette tuned for a
+   financial-operations dashboard read in daylight: a warm ledger-paper
+   surface (not stark white, not a beige/cream cliche), near-black ink
+   text, and the same single-accent + reserved-semantic-color discipline
+   as dark mode, recalibrated so every text/border pairing clears WCAG
+   AA on its background. Shadows are nearly retired in favor of hairline
+   borders, which read as "ledger lines" rather than "floating card"
+   and hold up better against a warm-white background than a soft grey
+   drop-shadow would.
+*/
+[data-theme="light"] {
+  --bg: #f6f3ee;
+  --bg-elevated: #ffffff;
+  --bg-card: #ffffff;
+  --bg-card-hover: #faf7f1;
+  --border: #ddd6c9;
+  --border-soft: #e8e3d8;
+
+  --text-primary: #1c1f26;
+  --text-secondary: #5b6270;
+  --text-tertiary: #8a8f7f;
+
+  --accent: #1f6fb2;
+  --accent-soft: #e2eef8;
+  --accent-strong: #14507f;
+  --accent-muted-fill: rgba(31, 111, 178, 0.32);
+  --on-accent: #ffffff;
+
+  --positive: #157a5c;
+  --positive-soft: #e0f2ea;
+  --negative: #b33a4a;
+  --negative-soft: #fbe7e9;
+  --warning: #96650f;
+  --warning-soft: #faf0dc;
+
+  --sev-low: #2274b5;
+  --sev-medium: #96650f;
+  --sev-high: #b5591e;
+  --sev-critical: #b33a4a;
+
+  --hover-overlay: rgba(28, 31, 38, 0.035);
+  --bg-radial-1: rgba(31, 111, 178, 0.05);
+  --bg-radial-2: rgba(150, 101, 15, 0.035);
+
+  --shadow-card: 0 1px 2px rgba(38, 32, 20, 0.05), 0 6px 20px -14px rgba(38, 32, 20, 0.18);
+
+  color-scheme: light;
 }
 
 * {
@@ -52,12 +108,13 @@ body {
   color: var(--text-primary);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 body {
   background-image:
-    radial-gradient(1200px 600px at 10% -10%, rgba(78, 168, 255, 0.08), transparent 60%),
-    radial-gradient(1000px 500px at 100% 0%, rgba(124, 196, 255, 0.05), transparent 55%);
+    radial-gradient(1200px 600px at 10% -10%, var(--bg-radial-1), transparent 60%),
+    radial-gradient(1000px 500px at 100% 0%, var(--bg-radial-2), transparent 55%);
   background-attachment: fixed;
 }
 
@@ -347,4 +404,10 @@ button.btn-ghost:disabled {
   border-radius: var(--radius-sm);
   padding: 6px 12px;
   margin-bottom: 14px;
+}
+
+.theme-toggle:hover {
+  background: var(--bg-card-hover);
+  color: var(--text-primary);
+  border-color: var(--accent);
 }

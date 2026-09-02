@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { getAuditTrail } from "../api/client.js";
 import { useApiData } from "../lib/useApiData.js";
+import { useDataset } from "../lib/DatasetContext.jsx";
 import { DemoBadge, LoadingBlock, ErrorState } from "../components/Primitives.jsx";
 import { IncidentTimeline } from "../components/IncidentTimeline.jsx";
 import { toTimelineRows } from "../lib/derive.js";
@@ -8,7 +9,8 @@ import { toTimelineRows } from "../lib/derive.js";
 const SEVERITY_FILTERS = ["ALL", "CRITICAL", "HIGH", "MEDIUM", "LOW"];
 
 export default function IncidentsPage() {
-  const { data, loading, error, source, reload } = useApiData(getAuditTrail, []);
+  const { datasetVersion } = useDataset();
+  const { data, loading, error, source, reload } = useApiData(getAuditTrail, [datasetVersion]);
   const [severityFilter, setSeverityFilter] = useState("ALL");
 
   const rows = useMemo(() => {

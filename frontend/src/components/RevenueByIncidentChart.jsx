@@ -40,7 +40,7 @@ export function RevenueByIncidentChart({ data }) {
           width={64}
         />
         <Tooltip
-          cursor={{ fill: "rgba(255,255,255,0.03)" }}
+          cursor={{ fill: "var(--hover-overlay)" }}
           contentStyle={{
             background: "var(--bg-elevated)",
             border: "1px solid var(--border)",
@@ -55,7 +55,7 @@ export function RevenueByIncidentChart({ data }) {
           iconType="circle"
           iconSize={8}
         />
-        <Bar dataKey="atRisk" name="Revenue at risk" fill="var(--accent-soft)" stroke="var(--accent)" strokeWidth={1} radius={[4, 4, 0, 0]} />
+        <Bar dataKey="atRisk" name="Revenue at risk" fill="var(--accent-muted-fill)" stroke="var(--accent)" strokeWidth={1} radius={[4, 4, 0, 0]} />
         <Bar dataKey="recovered" name="Revenue recovered" fill="var(--positive)" radius={[4, 4, 0, 0]} />
       </BarChart>
     </ResponsiveContainer>

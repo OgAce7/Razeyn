@@ -92,6 +92,41 @@ def _unstructured_evidence_items(
     return items
 
 
+def retrieve_evidence_for_incident(
+    incident: dict,
+    transactions: pd.DataFrame,
+    query: str | None = None,
+    top_k_unstructured: int = 5,
+) -> dict:
+    """Same evidence-assembly logic as `retrieve_evidence`, but takes the
+    candidate incident dict directly instead of looking it up on disk via
+    `load_candidate_incident`. This is what makes evidence retrieval work
+    for candidates that only exist in memory -- e.g. detected from an
+    uploaded dataset that was never written to
+    app/data/synthetic/candidate_incidents.json (see app/api/pipeline.py,
+    which uses this for both the seeded and uploaded-dataset runs).
+
+    `retrieve_evidence` below is now a thin wrapper around this: it does
+    the on-disk lookup, then delegates here, so there is exactly one
+    place that assembles a structured+unstructured evidence bundle.
+    """
+    structured_items = compute_structured_evidence(incident, transactions)
+
+    effective_query = query if query else _implicit_query(incident)
+    store = _get_store()
+    unstructured_items = _unstructured_evidence_items(
+        incident["incident_id"], effective_query, top_k_unstructured, store
+    )
+
+    return {
+        "incident_id": incident["incident_id"],
+        "retrieved_at": pd.Timestamp.utcnow().isoformat(),
+        "query_used": effective_query,
+        "structured_evidence": structured_items,
+        "unstructured_evidence": unstructured_items,
+    }
+
+
 def retrieve_evidence(
     incident_id: str,
     query: str | None = None,
@@ -121,20 +156,7 @@ def retrieve_evidence(
     text, relevance_score, timestamp.
     """
     incident = load_candidate_incident(incident_id)
-
     df = transactions if transactions is not None else load_transactions()
-    structured_items = compute_structured_evidence(incident, df)
-
-    effective_query = query if query else _implicit_query(incident)
-    store = _get_store()
-    unstructured_items = _unstructured_evidence_items(
-        incident_id, effective_query, top_k_unstructured, store
+    return retrieve_evidence_for_incident(
+        incident, df, query=query, top_k_unstructured=top_k_unstructured
     )
-
-    return {
-        "incident_id": incident_id,
-        "retrieved_at": pd.Timestamp.utcnow().isoformat(),
-        "query_used": effective_query,
-        "structured_evidence": structured_items,
-        "unstructured_evidence": unstructured_items,
-    }

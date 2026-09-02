@@ -43,6 +43,9 @@ export const ENDPOINTS = {
   evidence: (incidentId) => `${API_BASE}/evidence/${incidentId}`,
   incident: (incidentId) => `${API_BASE}/incidents/${incidentId}`,
   incidentDecision: (incidentId) => `${API_BASE}/incidents/${incidentId}/decision`,
+  datasets: `${API_BASE}/datasets`,
+  datasetUpload: `${API_BASE}/datasets/upload`,
+  datasetActivate: (datasetId) => `${API_BASE}/datasets/activate/${datasetId}`,
 };
 
 async function fetchJson(url) {
@@ -138,6 +141,93 @@ export async function decideIncident(incidentId, decision) {
       typeof detail === "string"
         ? detail
         : detail?.message || `Decision request failed with status ${res.status}`;
+    const err = new Error(message);
+    err.status = res.status;
+    err.detail = detail;
+    throw err;
+  }
+  return res.json();
+}
+
+/**
+ * List every dataset run so far this server process (the seeded
+ * synthetic dataset, plus any uploads), and which one is currently
+ * active. No mock fallback -- see decideIncident for why: this drives
+ * a real "which dataset is live" selector, and a fake answer here would
+ * misrepresent what the dashboard is actually showing.
+ *
+ * @returns {Promise<{active_dataset_id: string|null, datasets: Array<{
+ *   dataset_id: string, label: string, kind: "seeded"|"uploaded",
+ *   row_count: number, candidate_count: number,
+ *   uploaded_at: string|null, original_filename: string|null
+ * }>}>}
+ */
+export async function listDatasets() {
+  const res = await fetch(ENDPOINTS.datasets);
+  if (!res.ok) {
+    throw new Error(`Failed to list datasets (status ${res.status})`);
+  }
+  return res.json();
+}
+
+/**
+ * Upload a CSV, validate it against the transaction schema, and run it
+ * through the real detection -> retrieval -> agent -> policy -> executor
+ * pipeline. On success the uploaded dataset becomes the active one.
+ *
+ * Throws an Error with `.status` and `.detail` set on failure --
+ * `.detail.errors` is a structured list of {code, message,
+ * sample_row_numbers?, total_affected_rows?} for validation failures
+ * (422/400), so the UI can render specific, actionable messages instead
+ * of a generic "upload failed."
+ *
+ * @param {File} file
+ * @returns {Promise<{dataset_id: string, label: string, row_count: number,
+ *   candidate_count: number, validation_summary: {rows_read: number,
+ *   rows_valid: number, rows_dropped: number, warnings: Array<object>}}>}
+ */
+export async function uploadDataset(file) {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const res = await fetch(ENDPOINTS.datasetUpload, { method: "POST", body: formData });
+  if (!res.ok) {
+    let detail;
+    try {
+      detail = (await res.json()).detail;
+    } catch {
+      // non-JSON error body -- fall through with no detail
+    }
+    const message =
+      detail?.errors?.[0]?.message ||
+      (typeof detail === "string" ? detail : null) ||
+      `Upload failed with status ${res.status}`;
+    const err = new Error(message);
+    err.status = res.status;
+    err.detail = detail;
+    throw err;
+  }
+  return res.json();
+}
+
+/**
+ * Switch the active dataset back to one already run this process
+ * (currently only "seeded" can be re-activated on demand -- see
+ * backend/app/api/datasets.py for why re-running a past upload isn't
+ * supported without re-uploading it).
+ *
+ * @param {string} datasetId
+ */
+export async function activateDataset(datasetId) {
+  const res = await fetch(ENDPOINTS.datasetActivate(datasetId), { method: "POST" });
+  if (!res.ok) {
+    let detail;
+    try {
+      detail = (await res.json()).detail;
+    } catch {
+      // non-JSON error body
+    }
+    const message = typeof detail === "string" ? detail : `Failed to switch dataset (status ${res.status})`;
     const err = new Error(message);
     err.status = res.status;
     err.detail = detail;

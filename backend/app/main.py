@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.core.db import init_db
-from app.api import health, incidents
+from app.api import health, incidents, datasets
 from app.api.pipeline import seed_from_synthetic_dataset
 from app.api.state import get_app_state
 
@@ -31,6 +31,7 @@ app.add_middleware(
 
 app.include_router(health.router, prefix="/api")
 app.include_router(incidents.router)
+app.include_router(datasets.router)
 
 
 @app.on_event("startup")

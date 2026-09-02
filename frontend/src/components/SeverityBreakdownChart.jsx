@@ -28,7 +28,7 @@ export function SeverityBreakdownChart({ data }) {
           width={78}
         />
         <Tooltip
-          cursor={{ fill: "rgba(255,255,255,0.03)" }}
+          cursor={{ fill: "var(--hover-overlay)" }}
           contentStyle={{
             background: "var(--bg-elevated)",
             border: "1px solid var(--border)",

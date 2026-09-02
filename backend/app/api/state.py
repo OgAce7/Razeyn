@@ -57,11 +57,39 @@ class IncidentAlreadyResolvedError(Exception):
 
 
 @dataclass
+class DatasetInfo:
+    """Metadata about one dataset the pipeline has been run against --
+    either the seeded synthetic dataset or an uploaded CSV. Used purely
+    for display/selection in the UI (GET /api/datasets); it doesn't
+    carry the actual transaction rows (those aren't kept around once a
+    run completes, to avoid holding multiple full datasets in memory at
+    once -- see AppState.swap_dataset).
+    """
+
+    dataset_id: str
+    label: str
+    kind: str  # "seeded" | "uploaded"
+    row_count: int
+    candidate_count: int
+    uploaded_at: str | None = None
+    original_filename: str | None = None
+
+
+@dataclass
 class AppState:
     ledger: ActionLedger = field(default_factory=ActionLedger)
     audit_store: AuditStore = field(default_factory=AuditStore)
     pending: dict[str, PendingDecision] = field(default_factory=dict)
     active_dataset_label: str = "seeded synthetic dataset"
+
+    # The dataset currently backing ledger/audit_store/pending above.
+    active_dataset: DatasetInfo | None = None
+
+    # Every dataset run so far this process, most recent first, INCLUDING
+    # the currently active one -- lets the UI list "seeded" plus any
+    # uploads and switch back to one that was already run without
+    # re-uploading or re-running detection. Keyed by dataset_id.
+    dataset_history: dict[str, DatasetInfo] = field(default_factory=dict)
 
     # One lock per incident_id, created lazily, so concurrent
     # approve/reject calls for DIFFERENT incidents never block each
@@ -105,6 +133,29 @@ class AppState:
             if existing is None or record.created_at > existing.created_at:
                 latest[key] = record
         return list(latest.values())
+
+    def swap_dataset(self, info: DatasetInfo) -> None:
+        """Replace the active ledger/audit_store/pending with a fresh,
+        empty set for a newly-run dataset, and make `info` the active
+        one. This is a full replacement, not a merge -- per the product
+        decision that only one dataset is "live" in the dashboard at a
+        time (the seeded set, or the most recently selected upload),
+        never both at once. Existing pending escalations from the
+        previous dataset are discarded along with it: their underlying
+        transactions/candidates no longer correspond to what's active,
+        so there is nothing safe to resolve them against.
+
+        Per-incident locks are intentionally NOT cleared -- they're
+        keyed by incident_id and harmless to keep around; clearing them
+        while a decision might be in flight for the outgoing dataset
+        would remove the very serialization that protects it.
+        """
+        self.ledger = ActionLedger()
+        self.audit_store = AuditStore()
+        self.pending = {}
+        self.active_dataset = info
+        self.active_dataset_label = info.label
+        self.dataset_history[info.dataset_id] = info
 
 
 _app_state: AppState | None = None

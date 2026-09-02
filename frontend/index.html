@@ -4,6 +4,26 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Revenue Incident Responder</title>
+    <script>
+      // Set the theme before first paint so there's no flash of the
+      // wrong theme while React mounts. Mirrors the logic in
+      // src/lib/ThemeContext.jsx -- kept in sync manually since this
+      // has to run before any JS module loads.
+      (function () {
+        try {
+          var stored = localStorage.getItem("razeyn-theme");
+          var theme =
+            stored === "light" || stored === "dark"
+              ? stored
+              : window.matchMedia("(prefers-color-scheme: light)").matches
+              ? "light"
+              : "dark";
+          document.documentElement.setAttribute("data-theme", theme);
+        } catch (e) {
+          document.documentElement.setAttribute("data-theme", "dark");
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

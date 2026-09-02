@@ -1,21 +1,38 @@
 import React from "react";
 import { NavLink } from "react-router-dom";
+import { DatasetSwitcher } from "./DatasetSwitcher.jsx";
+import { useTheme } from "../lib/ThemeContext.jsx";
 
 const NAV_ITEMS = [
   { to: "/", label: "Overview", icon: "◧" },
   { to: "/incidents", label: "Incidents", icon: "◈" },
+  { to: "/upload", label: "Upload dataset", icon: "⇪" },
 ];
 
 export function Sidebar() {
+  const { theme, toggleTheme } = useTheme();
+
   return (
     <aside style={styles.sidebar}>
       <div style={styles.brandRow}>
         <div style={styles.logoMark}>RI</div>
-        <div>
+        <div style={styles.brandTextBlock}>
           <div style={styles.brandName}>Revenue Incident</div>
           <div style={styles.brandSub}>Responder</div>
         </div>
+        <button
+          type="button"
+          onClick={toggleTheme}
+          className="theme-toggle"
+          style={styles.themeToggle}
+          title={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
+          aria-label={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
+        >
+          {theme === "light" ? "☾" : "☼"}
+        </button>
       </div>
+
+      <DatasetSwitcher />
 
       <nav style={styles.nav}>
         {NAV_ITEMS.map((item) => (
@@ -71,6 +88,25 @@ const styles = {
     marginBottom: 28,
     padding: "0 6px",
   },
+  brandTextBlock: {
+    flex: 1,
+    minWidth: 0,
+  },
+  themeToggle: {
+    width: 28,
+    height: 28,
+    flexShrink: 0,
+    borderRadius: 8,
+    border: "1px solid var(--border)",
+    background: "var(--bg-card)",
+    color: "var(--text-secondary)",
+    fontSize: 13,
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    transition: "background 0.15s ease, color 0.15s ease",
+  },
   logoMark: {
     width: 34,
     height: 34,
@@ -81,7 +117,7 @@ const styles = {
     justifyContent: "center",
     fontWeight: 700,
     fontSize: 13,
-    color: "#03101f",
+    color: "var(--on-accent)",
     flexShrink: 0,
   },
   brandName: {
