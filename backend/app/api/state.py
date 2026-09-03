@@ -82,6 +82,27 @@ class AppState:
     pending: dict[str, PendingDecision] = field(default_factory=dict)
     active_dataset_label: str = "seeded synthetic dataset"
 
+    # Populated alongside each AuditRecord as it's built (see
+    # app/api/pipeline.py and app/api/incidents.py) -- keyed by
+    # AuditRecord.record_id. This is what GET /api/evaluation/report
+    # (app/api/evaluation.py) needs to compute revenue metrics, and it's
+    # captured at the one point in the pipeline where the exact
+    # per-transaction outcome is still available (the ActionRecord,
+    # before it's compressed into an AuditRecord) -- see
+    # compute_exact_revenue_recovered in app/evaluation/metrics.py.
+    # AppState never needs to retain the full transactions dataset to
+    # get this number: it's computed once, at creation time, and cached
+    # here as a plain float from then on.
+    revenue_recovered_by_record: dict[str, float] = field(default_factory=dict)
+
+    # One BaselineOutcome per candidate incident (see
+    # app/evaluation/baseline.py) -- what a naive fixed-rule retry
+    # policy would have recovered for the same incident, computed
+    # alongside the real pipeline run using the same window transactions
+    # (also available in-loop, not retained afterward). Powers the
+    # "vs fixed-rule baseline" comparison in the evaluation report.
+    baseline_outcomes: list = field(default_factory=list)
+
     # The dataset currently backing ledger/audit_store/pending above.
     active_dataset: DatasetInfo | None = None
 
@@ -153,6 +174,8 @@ class AppState:
         self.ledger = ActionLedger()
         self.audit_store = AuditStore()
         self.pending = {}
+        self.revenue_recovered_by_record = {}
+        self.baseline_outcomes = []
         self.active_dataset = info
         self.active_dataset_label = info.label
         self.dataset_history[info.dataset_id] = info

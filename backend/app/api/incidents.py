@@ -53,6 +53,7 @@ from pydantic import BaseModel
 
 from app.agent.actions import ESCALATE
 from app.audit.builder import build_audit_record
+from app.evaluation.metrics import compute_exact_revenue_recovered, evaluate_batch
 from app.policies.executor import execute_action
 from app.policies.ledger import ActionRecord, new_action_id, now_iso
 
@@ -69,6 +70,32 @@ def _get_state(request: Request) -> AppState:
 def get_audit_trail(request: Request):
     state = _get_state(request)
     return [record.to_dict() for record in state.latest_records_by_incident()]
+
+
+@router.get("/evaluation/report")
+def get_evaluation_report(request: Request):
+    """Composite evaluation report (detection/diagnosis/revenue/actions/
+    safety metrics) for the currently active dataset -- powers the
+    Overview page's KPI cards and charts.
+
+    Computed live from AppState on every call rather than cached,
+    because it must reflect approve/reject decisions and dataset swaps
+    immediately: this function is a pure function of
+    (latest_records_by_incident, revenue_recovered_by_record,
+    baseline_outcomes), all of which change as those events happen (see
+    app/api/pipeline.py and this module's decide_incident), so there's
+    nothing to invalidate -- every call just recomputes from current
+    state, which is cheap (evaluate_batch is pure aggregation over
+    already-in-memory records, no I/O).
+    """
+    state = _get_state(request)
+    records = state.latest_records_by_incident()
+    report = evaluate_batch(
+        records=records,
+        revenue_recovered_by_record=state.revenue_recovered_by_record,
+        baseline_outcomes=state.baseline_outcomes,
+    )
+    return report.to_dict()
 
 
 @router.get("/incidents/{incident_id}")
@@ -207,6 +234,17 @@ async def decide_incident(incident_id: str, body: DecisionRequest, request: Requ
             ground_truth=None,
         )
         state.audit_store.add(new_record)
+
+        # Same caching discipline as the initial pipeline run (see
+        # app/api/pipeline.py) -- captured here, at the point
+        # action_record.actual_result still has the exact per-transaction
+        # outcome list, before it's gone. Without this, an incident
+        # resolved via approve/reject would silently report 0 revenue
+        # recovered in GET /api/evaluation/report even when the approved
+        # action actually succeeded.
+        state.revenue_recovered_by_record[new_record.record_id] = compute_exact_revenue_recovered(
+            action_record
+        )
 
         return new_record.to_dict()
 

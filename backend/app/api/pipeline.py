@@ -42,6 +42,8 @@ from app.audit.builder import build_audit_record
 from app.data.loader import load_incidents_list, load_transactions
 from app.detection.config import DEFAULT_CONFIG
 from app.detection.detector import detect_incidents
+from app.evaluation.baseline import run_baseline
+from app.evaluation.metrics import compute_exact_revenue_recovered
 from app.policies.engine import evaluate_policy
 from app.policies.executor import EXECUTION_NOT_EXECUTED_ESCALATED, execute_action
 from app.retrieval.structured import resolve_segment_mask
@@ -148,6 +150,23 @@ def run_pipeline_for_dataset(
             ground_truth=ground_truth,
         )
         state.audit_store.add(record)
+
+        # Captured HERE, not reconstructed later: this is the one point
+        # in the pipeline where action_record.actual_result["per_transaction"]
+        # (the exact, unaggregated outcome list) still exists, before
+        # build_audit_record compresses it down to attempted/succeeded/
+        # failed counts. See compute_exact_revenue_recovered's docstring
+        # and AppState.revenue_recovered_by_record.
+        state.revenue_recovered_by_record[record.record_id] = compute_exact_revenue_recovered(
+            action_record
+        )
+
+        # Baseline comparison: what a naive fixed-rule retry policy would
+        # have recovered for this same incident's window transactions --
+        # computed alongside the real run using data already in scope
+        # here (window_transactions), not retained afterward. See
+        # app/evaluation/baseline.py.
+        state.baseline_outcomes.append(run_baseline(incident_id, window_transactions))
 
         if action_record.execution_status == EXECUTION_NOT_EXECUTED_ESCALATED:
             state.add_pending(
