@@ -56,6 +56,7 @@ from app.audit.builder import build_audit_record
 from app.evaluation.metrics import compute_exact_revenue_recovered, evaluate_batch
 from app.policies.executor import execute_action
 from app.policies.ledger import ActionRecord, new_action_id, now_iso
+from app.retrieval.bundle import retrieve_evidence_for_incident
 
 from app.api.state import AppState, IncidentAlreadyResolvedError
 
@@ -64,6 +65,35 @@ router = APIRouter(prefix="/api", tags=["incidents"])
 
 def _get_state(request: Request) -> AppState:
     return request.app.state.app_state
+
+
+@router.get("/evidence/{incident_id}")
+def get_evidence(incident_id: str, request: Request):
+    """Structured + unstructured evidence for one candidate incident,
+    computed fresh against the currently active dataset.
+
+    This route did not exist for most of this project's life -- the
+    frontend (app/api/client.js's getEvidence) has always called it and
+    always fallen back to canned mock evidence on the 404 that resulted,
+    which is why incident detail pages looked populated but showed
+    numbers disconnected from anything you actually did in the app. This
+    is the fix: evidence is now recomputed live, the same way
+    app/api/pipeline.py computes it during a full dataset run, just
+    triggered on demand for one incident instead of all of them.
+    """
+    state = _get_state(request)
+
+    if state.active_transactions_df is None:
+        raise HTTPException(status_code=503, detail="No dataset is currently active.")
+
+    candidate = state.active_candidates_by_id.get(incident_id)
+    if candidate is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No candidate incident with id {incident_id!r} in the active dataset.",
+        )
+
+    return retrieve_evidence_for_incident(candidate, state.active_transactions_df)
 
 
 @router.get("/evaluation/audit-trail")

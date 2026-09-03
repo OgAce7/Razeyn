@@ -34,8 +34,9 @@ import {
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api";
 
-/** Endpoints this client calls before falling back to mock data. None of
- * these exist on the backend yet except `/health` -- see module docstring. */
+/** Endpoints this client calls, falling back to mock data only for
+ * endpoints genuinely not yet implemented (see each function below for
+ * which ones that currently applies to). */
 export const ENDPOINTS = {
   health: `${API_BASE}/health`,
   auditTrail: `${API_BASE}/evaluation/audit-trail`,

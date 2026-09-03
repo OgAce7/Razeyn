@@ -29,6 +29,8 @@ import asyncio
 from dataclasses import dataclass, field
 from typing import Any
 
+import pandas as pd
+
 from app.audit.store import AuditStore
 from app.policies.engine import PolicyDecision
 from app.policies.ledger import ActionLedger
@@ -59,11 +61,11 @@ class IncidentAlreadyResolvedError(Exception):
 @dataclass
 class DatasetInfo:
     """Metadata about one dataset the pipeline has been run against --
-    either the seeded synthetic dataset or an uploaded CSV. Used purely
-    for display/selection in the UI (GET /api/datasets); it doesn't
-    carry the actual transaction rows (those aren't kept around once a
-    run completes, to avoid holding multiple full datasets in memory at
-    once -- see AppState.swap_dataset).
+    either the seeded synthetic dataset or an uploaded CSV. Used for
+    display/selection in the UI (GET /api/datasets). The actual
+    transaction rows and candidate incidents for the ACTIVE dataset are
+    held separately on AppState (active_transactions_df /
+    active_candidates_by_id) -- see those fields' docstring for why.
     """
 
     dataset_id: str
@@ -102,6 +104,25 @@ class AppState:
     # (also available in-loop, not retained afterward). Powers the
     # "vs fixed-rule baseline" comparison in the evaluation report.
     baseline_outcomes: list = field(default_factory=list)
+
+    # The active dataset's transactions and candidate incidents, kept
+    # in memory for the lifetime of this dataset being active -- needed
+    # to serve GET /api/evidence/{incident_id} on demand (evidence
+    # retrieval needs the full transactions DataFrame plus the specific
+    # candidate dict; see app/retrieval/bundle.retrieve_evidence_for_incident).
+    #
+    # This WAS deliberately left out of AppState earlier (see
+    # DatasetInfo's docstring, written when this field didn't exist) on
+    # the reasoning that holding a full dataset in memory should be
+    # avoided. That reasoning didn't weigh the actual cost: this
+    # project's datasets are capped at 50k rows by the upload validator
+    # (app/data/validate_upload.py), which is a few MB at most -- trivial
+    # to hold for one active dataset, and holding it is what actually
+    # allows evidence to be re-computed on demand instead of only once
+    # at pipeline-run time. Still fully discarded on the next
+    # swap_dataset() call, so at most one dataset's worth is ever held.
+    active_transactions_df: pd.DataFrame | None = None
+    active_candidates_by_id: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     # The dataset currently backing ledger/audit_store/pending above.
     active_dataset: DatasetInfo | None = None
@@ -176,6 +197,8 @@ class AppState:
         self.pending = {}
         self.revenue_recovered_by_record = {}
         self.baseline_outcomes = []
+        self.active_transactions_df = None
+        self.active_candidates_by_id = {}
         self.active_dataset = info
         self.active_dataset_label = info.label
         self.dataset_history[info.dataset_id] = info

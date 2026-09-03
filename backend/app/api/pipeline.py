@@ -96,6 +96,14 @@ def run_pipeline_for_dataset(
     if candidate_incidents is None:
         candidate_incidents = detect_incidents(transactions_df, DEFAULT_CONFIG)
 
+    # Retained for the lifetime of this dataset being active, so
+    # GET /api/evidence/{incident_id} can recompute evidence on demand
+    # without needing to have cached it at run time -- see
+    # AppState.active_transactions_df's docstring for why this is safe
+    # to hold (bounded dataset size, cleared on next swap_dataset()).
+    state.active_transactions_df = transactions_df
+    state.active_candidates_by_id = {c["incident_id"]: c for c in candidate_incidents}
+
     ground_truth_by_incident_id = ground_truth_by_incident_id or {}
 
     for candidate in candidate_incidents:

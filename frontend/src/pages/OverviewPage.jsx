@@ -81,7 +81,7 @@ export default function OverviewPage() {
                 <KpiCard
                   label="Revenue at risk"
                   value={formatMoney(report?.revenue?.total_revenue_at_risk, { precise: true })}
-                  sublabel={`across ${formatNumber(report?.record_count)} incidents`}
+                  sublabel={`across all ${formatNumber(report?.record_count)} detected incidents`}
                   tone="warning"
                 />
                 <KpiCard
