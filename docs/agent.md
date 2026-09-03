@@ -15,18 +15,18 @@ action executor).
 | `app/agent/actions.py` | The finite, explicit universe of recovery actions |
 | `app/agent/schema.py` | `AgentInput` / `AgentOutput` — strict Pydantic models |
 | `app/agent/prompt.py` | System/user prompt construction + the forced tool-use schema |
-| `app/agent/client.py` | Claude API wrapper — the only network call in this module |
+| `app/agent/client.py` | Mistral API wrapper — the only network call in this module |
 | `app/agent/guardrails.py` | Deterministic (non-LLM) post-processing enforcement |
 | `app/agent/investigate.py` | Orchestration + fallback handling for every failure mode |
 | `app/agent/errors.py` | Exception types for each failure mode |
-| `backend/tests/test_agent_*.py` | 44 tests across schema, guardrails, client, and orchestration |
+| `backend/tests/test_agent_*.py` | 61 tests across schema, guardrails, client, and orchestration |
 
 ## Running it
 
 ```bash
 cd backend
 source .venv/bin/activate
-# needs ANTHROPIC_API_KEY set in backend/.env for a real call;
+# needs MISTRAL_API_KEY set in backend/.env for a real call;
 # tests mock the API and need no key/network at all.
 python -m pytest tests/test_agent_*.py -v
 ```
@@ -65,7 +65,7 @@ AgentInput (incident + evidence + allowed_actions + merchant_policies)
   build system/user prompt (prompt.py)
         │
         ▼
-  call Claude, forced tool-use (client.py) ──API error──► fallback AgentOutput (ESCALATE)
+  call Mistral, forced tool-use (client.py) ──API error──► fallback AgentOutput (ESCALATE)
         │ success                                  │
         ▼                                            └─(no tool call)──► fallback AgentOutput (ESCALATE)
   parse into AgentOutput (schema.py) ──validation error──► fallback AgentOutput (ESCALATE)
@@ -257,7 +257,7 @@ assert the cause as fact.
 - **`test_agent_schema.py`** (9 tests) — `AgentInput`/`AgentOutput`
   validation: required fields, defaults, empty-allowed-actions rejection,
   confidence clamping vs. wrong-type rejection, JSON round-tripping.
-- **`test_agent_guardrails.py`** (19 tests) — the deterministic
+- **`test_agent_guardrails.py`** (18 tests) — the deterministic
   enforcement layer in isolation: deterministic revenue extraction
   (structured evidence → incident field → not-found), evidence ID
   filtering (valid pass-through, invented IDs dropped, all-invented →
@@ -265,14 +265,15 @@ assert the cause as fact.
   overwritten + flagged, invented-with-no-source → zeroed + flagged),
   action allow-list enforcement, both confidence thresholds, and
   internal-consistency (`ESCALATE` always implies `escalation_required`).
-- **`test_agent_client.py`** (9 tests) — the API wrapper directly, with
-  `anthropic.Anthropic` mocked: successful tool-call extraction, missing
-  API key, retry-then-succeed on a transient `RateLimitError`,
-  give-up-after-`MAX_RETRIES` on a persistent `APIConnectionError`,
-  fail-fast (no retry) on a 4xx `AuthenticationError`, and
+- **`test_agent_client.py`** (17 tests) — the API wrapper directly, with
+  `mistralai.client.Mistral` mocked: successful tool-call extraction
+  (including when arguments come back as a JSON string vs. an
+  already-parsed dict), missing API key, retry-then-succeed on a
+  transient 429 or 5xx `SDKError`, give-up-after-`MAX_RETRIES` on a
+  persistent server error, fail-fast (no retry) on a 4xx auth error, and
   `MalformedOutputError` when the model responds with plain text instead
   of a tool call.
-- **`test_agent_investigate.py`** (13 tests) — the full orchestration
+- **`test_agent_investigate.py`** (17 tests) — the full orchestration
   layer with `call_agent_model` mocked, explicitly covering:
   - **API failure**: `AgentAPIError` → safe `ESCALATE` fallback, doesn't
     raise, still reports revenue from evidence.

@@ -10,7 +10,7 @@ piece that turns "we have five separate modules with clean I/O
 contracts" into "here is one reproducible batch evaluation run."
 
 `investigate_fn` / `retrieve_fn` are injectable specifically so this
-module -- and the tests for it -- never *require* a live Anthropic API
+module -- and the tests for it -- never *require* a live Mistral API
 call: pass a stub that returns a fixed `AgentResult` and the entire
 pipeline (policy -> executor -> audit -> metrics) can be exercised
 deterministically offline. The default values point at the real

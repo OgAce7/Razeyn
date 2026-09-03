@@ -4,9 +4,9 @@ project's actual synthetic dataset (transactions.csv, incidents.json,
 candidate_incidents.json) and the real retrieval/policy/executor code.
 
 The AI agent itself is NOT built by this task (per the brief), and this
-sandbox has no network access to the Anthropic API, so this script uses
-a small deterministic, evidence-driven stub in place of the real LLM
-call -- it inspects the SAME structured evidence the real agent would
+sandbox has no network access to the LLM provider API, so this script
+uses a small deterministic, evidence-driven stub in place of the real
+LLM call -- it inspects the SAME structured evidence the real agent would
 receive and picks an action using simple fixed rules (not a model call,
 not randomness). This is clearly a stand-in for demonstration purposes
 only: the point of this script is to prove the evaluation/metrics/audit

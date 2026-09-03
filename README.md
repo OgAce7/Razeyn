@@ -22,7 +22,7 @@ Payment data
 
 ## Design principles
 
-- **LLM never controls money.** The AI agent (Claude) only investigates,
+- **LLM never controls money.** The AI agent (Mistral) only investigates,
   reasons, and recommends. All calculations, policy checks, and financial
   values are owned by deterministic Python code.
 - **Every AI decision is traceable to evidence.** Diagnoses reference the
@@ -46,7 +46,7 @@ razeyn/
 │   │   ├── data/                synthetic payment data + loaders (implemented, see docs/data_layer.md)
 │   │   ├── detection/           deterministic degradation detection engine (implemented, see docs/detection.md)
 │   │   ├── retrieval/          evidence retrieval, structured + unstructured (implemented, see docs/retrieval.md)
-│   │   ├── agent/               AI investigation + recovery-decision agent, Claude API (implemented, see docs/agent.md)
+│   │   ├── agent/               AI investigation + recovery-decision agent, Mistral API (implemented, see docs/agent.md)
 │   │   ├── policies/            policy engine, guardrails, bounded executor (implemented, see docs/policy_engine.md)
 │   │   └── audit/                audit trail persistence (not yet implemented)
 │   ├── tests/                    pytest suite for detection + retrieval + agent + policies
@@ -77,7 +77,7 @@ cd backend
 python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env             # then fill in ANTHROPIC_API_KEY etc.
+cp .env.example .env             # then fill in MISTRAL_API_KEY etc.
 uvicorn app.main:app --reload
 ```
 
@@ -101,9 +101,10 @@ status to confirm connectivity.
 
 | File | Key | Purpose |
 |---|---|---|
-| `backend/.env` | `ANTHROPIC_API_KEY` | Claude API key for the investigation agent |
-| `backend/.env` | `ANTHROPIC_MODEL` | Model name, defaults to `claude-sonnet-4-6` |
-| `backend/.env` | `MISTRAL_API_KEY` | Optional, for evidence retrieval if needed |
+| `backend/.env` | `MISTRAL_API_KEY` | Mistral API key — powers the investigation agent (required for real, non-fallback diagnoses) and, optionally, evidence embeddings |
+| `backend/.env` | `MISTRAL_AGENT_MODEL` | Agent model name, defaults to `mistral-large-latest` |
+| `backend/.env` | `ANTHROPIC_API_KEY` | Not currently used by the agent (kept for a possible future switch back to Claude) |
+| `backend/.env` | `ANTHROPIC_MODEL` | Not currently used |
 | `backend/.env` | `DATABASE_URL` | SQLite connection string |
 | `backend/.env` | `CORS_ORIGINS` | Allowed frontend origin(s) |
 | `frontend/.env` | `VITE_API_BASE_URL` | Override API base path if not using the dev proxy |

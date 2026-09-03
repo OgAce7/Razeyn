@@ -3,7 +3,7 @@ AI Investigation Agent.
 
 Investigates a detected incident using ONLY supplied evidence, and
 recommends ONE bounded recovery action from a caller-supplied finite
-list. Uses the Claude API with forced tool-use for strict structured
+list. Uses the Mistral API with forced tool-use for strict structured
 output, backed by deterministic (non-LLM) guardrails that enforce
 evidence integrity, revenue-figure integrity, and policy compliance
 regardless of what the model returns.
@@ -29,7 +29,7 @@ Files:
 - actions.py       The finite universe of possible recovery actions.
 - schema.py        AgentInput / AgentOutput (strict Pydantic models).
 - prompt.py         System/user prompt construction + forced tool-use schema.
-- client.py         Claude API wrapper (the only network call in this module).
+- client.py         Mistral API wrapper (the only network call in this module).
 - guardrails.py      Deterministic post-processing enforcement.
 - investigate.py     Orchestration + fallback handling for every failure mode.
 - errors.py           Exception types for each failure mode.

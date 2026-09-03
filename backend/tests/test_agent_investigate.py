@@ -1,6 +1,6 @@
 """
 Integration tests for app/agent/investigate.py — the public entrypoint.
-All Claude API calls are mocked (app.agent.investigate.call_agent_model)
+All Mistral API calls are mocked (app.agent.investigate.call_agent_model)
 so these run with no network access and no API key, deterministically.
 
 Covers the four required error-handling scenarios plus the happy path:

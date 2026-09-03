@@ -3,7 +3,7 @@ Tests for app/evaluation/runner.py and app/evaluation/report.py.
 
 The agent is stubbed via `investigate_fn` -- per the brief, this task
 must not implement or modify the AI agent, and tests must not depend on
-a live Anthropic API call. Everything downstream of the stub (policy
+a live LLM provider API call. Everything downstream of the stub (policy
 engine, executor, audit builder, metrics) is the REAL code.
 """
 

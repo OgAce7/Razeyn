@@ -16,7 +16,7 @@ class AgentError(Exception):
 
 
 class AgentAPIError(AgentError):
-    """The Claude API call itself failed — network error, auth error,
+    """The Mistral API call itself failed — network error, auth error,
     rate limit, timeout, or a non-2xx response after retries."""
 
 
