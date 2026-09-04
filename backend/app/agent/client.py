@@ -47,6 +47,16 @@ RETRY_BACKOFF_SECONDS = 2.0
 # does on every startup) reliably hits it without this.
 RATE_LIMIT_BACKOFF_SECONDS = 8.0
 MAX_TOKENS = 1500
+# The Mistral SDK does not apply any default request timeout on its own --
+# without one, a stalled connection (common under free-tier load, or any
+# transient network issue) hangs the call indefinitely rather than raising
+# an error that the retry loop below can act on. Since app startup calls
+# this synchronously in a loop (see app/api/pipeline.seed_from_synthetic_dataset),
+# an unbounded hang here means "Waiting for application startup" never
+# resolves, with no error, no traceback, nothing -- indistinguishable from
+# a true deadlock. 45s is generous for a single chat completion; a real,
+# fast response typically takes 1-5s.
+REQUEST_TIMEOUT_MS = 45_000
 
 TOOL_NAME = TOOL_SCHEMA["name"]
 
@@ -93,7 +103,7 @@ def call_agent_model(
     if not settings.mistral_api_key:
         raise AgentAPIError("MISTRAL_API_KEY is not configured")
 
-    client = Mistral(api_key=settings.mistral_api_key)
+    client = Mistral(api_key=settings.mistral_api_key, timeout_ms=REQUEST_TIMEOUT_MS)
     model_name = model or settings.mistral_agent_model
     tool = _to_mistral_tool(TOOL_SCHEMA)
 

@@ -322,6 +322,54 @@ def test_call_agent_model_propagates_malformed_output_without_retry(monkeypatch)
     assert mock_client.chat.complete.call_count == 1  # no retries
 
 
+def test_call_agent_model_constructs_client_with_finite_timeout(monkeypatch):
+    """Regression test: the Mistral SDK applies NO default request
+    timeout unless timeout_ms is passed explicitly -- without it, a
+    stalled connection (common under free-tier load) hangs the call
+    indefinitely instead of raising an error the retry loop can act on.
+    Since app startup calls this synchronously in a loop, an unbounded
+    hang here surfaces as "Waiting for application startup" never
+    resolving, with no error and no traceback at all."""
+    from app.agent.client import REQUEST_TIMEOUT_MS
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "mistral_api_key", "test-key")
+
+    success_response = make_tool_call_response({"diagnosis": "ok"})
+    mock_client = MagicMock()
+    mock_client.chat.complete.return_value = success_response
+
+    with patch("mistralai.client.Mistral", return_value=mock_client) as mock_ctor:
+        call_agent_model("system", "user")
+
+    assert mock_ctor.call_count == 1
+    _, kwargs = mock_ctor.call_args
+    assert kwargs.get("timeout_ms") == REQUEST_TIMEOUT_MS
+    assert REQUEST_TIMEOUT_MS is not None and REQUEST_TIMEOUT_MS > 0
+
+
+def test_call_agent_model_retries_on_timeout_exception(monkeypatch):
+    """An httpx timeout (what a finite timeout_ms actually raises once a
+    stalled request is cut off) must be treated as retryable, same as
+    any other bare transport-level exception."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "mistral_api_key", "test-key")
+    monkeypatch.setattr("app.agent.client.RETRY_BACKOFF_SECONDS", 0)
+
+    timeout_error = httpx.TimeoutException("timed out")
+    success_response = make_tool_call_response({"diagnosis": "ok"})
+
+    mock_client = MagicMock()
+    mock_client.chat.complete.side_effect = [timeout_error, success_response]
+
+    with patch("mistralai.client.Mistral", return_value=mock_client):
+        result = call_agent_model("system", "user")
+
+    assert result == {"diagnosis": "ok"}
+    assert mock_client.chat.complete.call_count == 2
+
+
 def test_call_agent_model_retries_on_bare_connection_error(monkeypatch):
     """A raw transport exception not wrapped in SDKError (e.g. a
     connection-level httpx failure) should still be treated as
