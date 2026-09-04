@@ -16,13 +16,19 @@ export function AiDecisionPanel({ agentDecision }) {
     status,
     guardrail_violations,
     evidence_ids,
+    error_detail,
   } = agentDecision;
 
   return (
     <div>
       {status !== "ok" && (
-        <div className="pill pill-warning" style={{ marginBottom: 14 }}>
-          Fallback path: {humanizeAction(status)}
+        <div style={{ marginBottom: 14 }}>
+          <div className="pill pill-warning">Fallback path: {humanizeAction(status)}</div>
+          {error_detail && (
+            <p className="text-tertiary mono" style={{ fontSize: 12, marginTop: 6 }}>
+              {error_detail}
+            </p>
+          )}
         </div>
       )}
 

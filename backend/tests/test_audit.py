@@ -166,6 +166,7 @@ def test_build_audit_record_copies_every_field_verbatim():
     assert record.agent_decision.diagnosis == agent_result.output.diagnosis
     assert record.agent_decision.revenue_at_risk == 7402.39
     assert record.agent_decision.status == "ok"
+    assert record.agent_decision.error_detail is None
     assert record.policy_decision.approved is True
     assert record.policy_decision.eligible_transaction_ids == ("txn_001523", "txn_001517")
     assert record.action_outcome.action_id == "act_00001"
@@ -174,6 +175,36 @@ def test_build_audit_record_copies_every_field_verbatim():
     assert record.ground_truth.is_true_incident is True
     assert record.ground_truth.revenue_exposed == 7402.39
     assert record.ground_truth.affected_segment == {"institution": "HDFC Bank", "payment_method": "UPI"}
+
+
+def test_build_audit_record_preserves_api_error_detail():
+    """Regression test: previously `error_detail` (the actual reason an
+    incident fell back to ESCALATE, e.g. "MISTRAL_API_KEY is not
+    configured") was computed on AgentResult but never copied into the
+    audit record, making a missing/invalid API key indistinguishable
+    from a genuine model-driven ESCALATE recommendation anywhere in the
+    API or UI."""
+    candidate = make_candidate_incident()
+    evidence = make_evidence()
+    agent_result = _FakeAgentResult(
+        output=_FakeAgentOutput(recommended_action="ESCALATE", confidence=0.0),
+        status="api_error",
+        error_detail="MISTRAL_API_KEY is not configured",
+    )
+    policy_decision = make_policy_decision()
+    action_record = make_action_record()
+
+    record = build_audit_record(
+        candidate_incident=candidate,
+        evidence=evidence,
+        agent_result=agent_result,
+        policy_decision=policy_decision,
+        action_record=action_record,
+        ground_truth=None,
+    )
+
+    assert record.agent_decision.status == "api_error"
+    assert record.agent_decision.error_detail == "MISTRAL_API_KEY is not configured"
 
 
 def test_build_audit_record_ground_truth_optional():

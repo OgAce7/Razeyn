@@ -54,6 +54,7 @@
  * @property {boolean} escalation_required
  * @property {string} status  "ok"|"no_evidence"|"api_error"|"malformed_output"
  * @property {string[]} guardrail_violations
+ * @property {string|null} error_detail  raw error message when status !== "ok" (e.g. missing/invalid MISTRAL_API_KEY)
  */
 
 /**

@@ -80,6 +80,7 @@ def _agent_decision_ref(agent_result: Any) -> AgentDecisionRef:
         escalation_required=bool(output.escalation_required),
         status=agent_result.status,
         guardrail_violations=tuple(agent_result.guardrail_violations),
+        error_detail=getattr(agent_result, "error_detail", None),
     )
 
 

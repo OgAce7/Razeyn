@@ -296,6 +296,7 @@ class _AgentResultShim:
         self.output = _AgentOutputShim(agent_decision_ref)
         self.status = agent_decision_ref.status
         self.guardrail_violations = list(agent_decision_ref.guardrail_violations)
+        self.error_detail = agent_decision_ref.error_detail
 
 
 class _AgentOutputShim:

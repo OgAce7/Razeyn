@@ -115,6 +115,7 @@ class AgentDecisionRef:
     escalation_required: bool
     status: str  # AgentResult.status: "ok" | "no_evidence" | "api_error" | "malformed_output"
     guardrail_violations: tuple[str, ...] = field(default_factory=tuple)
+    error_detail: str | None = None
 
 
 @dataclass(frozen=True)
