@@ -17,6 +17,17 @@ from app.api import health, incidents, datasets
 from app.api.pipeline import seed_from_synthetic_dataset
 from app.api.state import get_app_state
 
+# Without this, Python's root logger defaults to WARNING-only, which
+# silently drops every logger.info(...) call in this codebase (e.g. the
+# per-incident progress logging in app/api/pipeline.py that exists
+# specifically so a long-running Mistral API retry sequence at startup
+# is visible instead of looking like a hang). basicConfig() here, before
+# any other module's logger is used, ensures INFO+ actually reaches the
+# console this app is run from.
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
 logger = logging.getLogger("razeyn")
 
 app = FastAPI(title="Razeyn API", version="0.1.0")

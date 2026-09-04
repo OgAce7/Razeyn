@@ -29,6 +29,7 @@ app/data/synthetic/candidate_incidents.json.
 
 from __future__ import annotations
 
+import logging
 import time
 import uuid
 from datetime import datetime, timezone
@@ -50,6 +51,8 @@ from app.policies.engine import evaluate_policy
 from app.policies.executor import EXECUTION_NOT_EXECUTED_ESCALATED, execute_action
 from app.retrieval.structured import resolve_segment_mask
 from app.retrieval.bundle import retrieve_evidence_for_incident
+
+logger = logging.getLogger(__name__)
 
 from app.api.state import AppState, DatasetInfo, PendingDecision
 
@@ -131,6 +134,12 @@ def run_pipeline_for_dataset(
             unstructured_evidence=unstructured,
             allowed_actions=list(ALL_ACTIONS),
             merchant_policies={},
+        )
+        logger.info(
+            "Investigating incident %d/%d (%s)... this calls the Mistral API and can "
+            "take a while if retries are needed (see app/agent/client.py warnings above "
+            "for why, e.g. rate limiting) -- this is not a hang.",
+            i + 1, len(candidate_incidents), incident_id,
         )
         agent_result = investigate_incident(agent_input)
 

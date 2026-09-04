@@ -31,11 +31,14 @@ description, parameters}} wrapper.
 from __future__ import annotations
 
 import json
+import logging
 import time
 
 from app.agent.errors import AgentAPIError, MalformedOutputError
 from app.agent.prompt import TOOL_SCHEMA
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 MAX_RETRIES = 4
 RETRY_BACKOFF_SECONDS = 2.0
@@ -46,6 +49,14 @@ RETRY_BACKOFF_SECONDS = 2.0
 # several incidents back-to-back (as app/api/pipeline.seed_from_synthetic_dataset
 # does on every startup) reliably hits it without this.
 RATE_LIMIT_BACKOFF_SECONDS = 8.0
+# Hard ceiling on any single backoff wait -- without this, growing backoff
+# (RATE_LIMIT_BACKOFF_SECONDS * attempt) compounded with MAX_RETRIES could
+# silently add up to several minutes of unlogged sleeping per call (worse
+# across a whole batch of incidents at startup), which is indistinguishable
+# from a true hang to anyone watching the terminal. See client.py's
+# logging in the retry loop below for the fix to the "indistinguishable"
+# half of that problem; this constant fixes the "several minutes" half.
+MAX_BACKOFF_SECONDS = 20.0
 MAX_TOKENS = 1500
 # The Mistral SDK does not apply any default request timeout on its own --
 # without one, a stalled connection (common under free-tier load, or any
@@ -157,8 +168,19 @@ def call_agent_model(
                 wait = retry_after if retry_after is not None else RATE_LIMIT_BACKOFF_SECONDS * (attempt + 1)
             else:
                 wait = RETRY_BACKOFF_SECONDS * (attempt + 1)
+            wait = min(wait, MAX_BACKOFF_SECONDS)
+            logger.warning(
+                "Mistral API call failed (attempt %d/%d, %s): %s -- retrying in %.1fs",
+                attempt + 1, MAX_RETRIES + 1,
+                "rate limited" if last_was_rate_limit else "transient error",
+                last_error, wait,
+            )
             time.sleep(wait)
 
+    logger.error(
+        "Mistral API call failed permanently after %d attempt(s): %s",
+        MAX_RETRIES + 1, last_error,
+    )
     raise AgentAPIError(
         f"Mistral API call failed after {MAX_RETRIES + 1} attempt(s): {last_error}"
     ) from last_error
