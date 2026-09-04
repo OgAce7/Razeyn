@@ -37,8 +37,15 @@ from app.agent.errors import AgentAPIError, MalformedOutputError
 from app.agent.prompt import TOOL_SCHEMA
 from app.core.config import settings
 
-MAX_RETRIES = 2
-RETRY_BACKOFF_SECONDS = 1.5
+MAX_RETRIES = 4
+RETRY_BACKOFF_SECONDS = 2.0
+# Free-tier Mistral accounts commonly have very strict per-second/per-minute
+# rate limits (see app/agent/client.py module docstring). A 429 needs a much
+# longer wait than a transient 5xx/connection error -- on a paid tier this
+# rarely triggers, but on the free "Experiment" tier, calling the agent for
+# several incidents back-to-back (as app/api/pipeline.seed_from_synthetic_dataset
+# does on every startup) reliably hits it without this.
+RATE_LIMIT_BACKOFF_SECONDS = 8.0
 MAX_TOKENS = 1500
 
 TOOL_NAME = TOOL_SCHEMA["name"]
@@ -91,6 +98,7 @@ def call_agent_model(
     tool = _to_mistral_tool(TOOL_SCHEMA)
 
     last_error: Exception | None = None
+    last_was_rate_limit = False
     for attempt in range(MAX_RETRIES + 1):
         try:
             response = client.chat.complete(
@@ -110,8 +118,12 @@ def call_agent_model(
 
         except SDKError as e:
             status_code = getattr(e.raw_response, "status_code", None) if e.raw_response else None
-            if status_code == 429 or (status_code and 500 <= status_code < 600):
+            if status_code == 429:
                 last_error = e
+                last_was_rate_limit = True
+            elif status_code and 500 <= status_code < 600:
+                last_error = e
+                last_was_rate_limit = False
             elif status_code is not None:
                 # 4xx other than 429 -- bad request, auth, etc. Fail fast.
                 raise AgentAPIError(f"Mistral API error ({status_code}): {e}") from e
@@ -119,6 +131,7 @@ def call_agent_model(
                 # No HTTP response at all (connection-level failure) --
                 # treat as retryable, same as a 5xx.
                 last_error = e
+                last_was_rate_limit = False
 
         except Exception as e:
             # Anything else from the SDK/transport layer (e.g. httpx
@@ -126,13 +139,36 @@ def call_agent_model(
             # treated as retryable, mirroring the prior Anthropic
             # version's handling of anthropic.APIConnectionError.
             last_error = e
+            last_was_rate_limit = False
 
         if attempt < MAX_RETRIES:
-            time.sleep(RETRY_BACKOFF_SECONDS * (attempt + 1))
+            if last_was_rate_limit:
+                retry_after = _retry_after_seconds(last_error)
+                wait = retry_after if retry_after is not None else RATE_LIMIT_BACKOFF_SECONDS * (attempt + 1)
+            else:
+                wait = RETRY_BACKOFF_SECONDS * (attempt + 1)
+            time.sleep(wait)
 
     raise AgentAPIError(
         f"Mistral API call failed after {MAX_RETRIES + 1} attempt(s): {last_error}"
     ) from last_error
+
+
+def _retry_after_seconds(error: Exception) -> float | None:
+    """If the SDK error carries a Retry-After header, use that instead of
+    our own guessed backoff -- the API is telling us exactly how long to
+    wait, which is more reliable than a fixed schedule."""
+    raw_response = getattr(error, "raw_response", None)
+    headers = getattr(raw_response, "headers", None) if raw_response is not None else None
+    if not headers:
+        return None
+    value = headers.get("retry-after") or headers.get("Retry-After")
+    if value is None:
+        return None
+    try:
+        return max(float(value), 0.0)
+    except (TypeError, ValueError):
+        return None
 
 
 def _extract_tool_input(response) -> dict:

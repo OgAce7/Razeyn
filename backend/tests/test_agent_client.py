@@ -180,6 +180,7 @@ def test_call_agent_model_retries_on_rate_limit_then_succeeds(monkeypatch):
 
     monkeypatch.setattr(settings, "mistral_api_key", "test-key")
     monkeypatch.setattr("app.agent.client.RETRY_BACKOFF_SECONDS", 0)
+    monkeypatch.setattr("app.agent.client.RATE_LIMIT_BACKOFF_SECONDS", 0)
 
     rate_limit_error = _sdk_error(429)
     success_response = make_tool_call_response({"diagnosis": "recovered", "confidence": 0.6})
@@ -192,6 +193,57 @@ def test_call_agent_model_retries_on_rate_limit_then_succeeds(monkeypatch):
 
     assert result == {"diagnosis": "recovered", "confidence": 0.6}
     assert mock_client.chat.complete.call_count == 2
+
+
+def test_call_agent_model_uses_rate_limit_backoff_not_generic_backoff(monkeypatch):
+    """A 429 must wait on RATE_LIMIT_BACKOFF_SECONDS, not the shorter
+    generic RETRY_BACKOFF_SECONDS used for 5xx/connection errors --
+    regression test for the free-tier rate-limit fix (a fixed 1.5s
+    generic backoff was nowhere near enough for a strict free-tier
+    requests-per-second limit, so 429s need their own, longer schedule)."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "mistral_api_key", "test-key")
+    monkeypatch.setattr("app.agent.client.RETRY_BACKOFF_SECONDS", 0)
+    monkeypatch.setattr("app.agent.client.RATE_LIMIT_BACKOFF_SECONDS", 5)
+
+    rate_limit_error = _sdk_error(429)
+    success_response = make_tool_call_response({"diagnosis": "recovered"})
+
+    mock_client = MagicMock()
+    mock_client.chat.complete.side_effect = [rate_limit_error, success_response]
+
+    with patch("mistralai.client.Mistral", return_value=mock_client), \
+         patch("app.agent.client.time.sleep") as mock_sleep:
+        call_agent_model("system", "user")
+
+    mock_sleep.assert_called_once_with(5)  # RATE_LIMIT_BACKOFF_SECONDS * (attempt(0) + 1)
+
+
+def test_call_agent_model_honors_retry_after_header_on_rate_limit(monkeypatch):
+    """When Mistral's 429 response includes a Retry-After header, that
+    value should be used instead of our own guessed backoff schedule --
+    the API knows better than a fixed constant how long to wait."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "mistral_api_key", "test-key")
+    monkeypatch.setattr("app.agent.client.RETRY_BACKOFF_SECONDS", 0)
+    monkeypatch.setattr("app.agent.client.RATE_LIMIT_BACKOFF_SECONDS", 100)  # should be ignored
+
+    request = httpx.Request("POST", "https://api.mistral.ai/v1/chat/completions")
+    response_with_header = httpx.Response(429, request=request, headers={"Retry-After": "3"})
+    from mistralai.client.errors import SDKError
+    rate_limit_error = SDKError("error 429", raw_response=response_with_header)
+    success_response = make_tool_call_response({"diagnosis": "recovered"})
+
+    mock_client = MagicMock()
+    mock_client.chat.complete.side_effect = [rate_limit_error, success_response]
+
+    with patch("mistralai.client.Mistral", return_value=mock_client), \
+         patch("app.agent.client.time.sleep") as mock_sleep:
+        call_agent_model("system", "user")
+
+    mock_sleep.assert_called_once_with(3.0)
 
 
 def test_call_agent_model_retries_on_server_error(monkeypatch):

@@ -29,6 +29,7 @@ app/data/synthetic/candidate_incidents.json.
 
 from __future__ import annotations
 
+import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -39,6 +40,7 @@ from app.agent.actions import ALL_ACTIONS
 from app.agent.investigate import investigate_incident
 from app.agent.schema import AgentInput
 from app.audit.builder import build_audit_record
+from app.core.config import settings
 from app.data.loader import load_incidents_list, load_transactions
 from app.detection.config import DEFAULT_CONFIG
 from app.detection.detector import detect_incidents
@@ -106,8 +108,14 @@ def run_pipeline_for_dataset(
 
     ground_truth_by_incident_id = ground_truth_by_incident_id or {}
 
-    for candidate in candidate_incidents:
+    for i, candidate in enumerate(candidate_incidents):
         incident_id = candidate["incident_id"]
+
+        if i > 0 and settings.agent_call_interval_seconds > 0:
+            # See Settings.agent_call_interval_seconds -- avoids tripping a
+            # strict free-tier rate limit by firing every candidate's agent
+            # call back-to-back with no spacing.
+            time.sleep(settings.agent_call_interval_seconds)
 
         # retrieve_evidence_for_incident takes the candidate dict directly
         # (no on-disk lookup) -- this is what makes evidence retrieval

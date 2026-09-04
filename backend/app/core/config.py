@@ -20,6 +20,15 @@ class Settings(BaseSettings):
     mistral_api_key: str = ""
     mistral_agent_model: str = "mistral-large-latest"
 
+    # Delay (seconds) between successive investigate_incident() calls when
+    # processing a batch of candidates (dataset seeding/upload) -- 0 by
+    # default (paid tiers don't need it), but free-tier Mistral accounts
+    # commonly enforce a strict requests-per-second limit that firing
+    # several incidents back-to-back at startup reliably trips, even with
+    # per-call retry/backoff in app/agent/client.py. Set e.g. to 2.0 in
+    # .env if you're on a free/rate-limited tier and seeing 429s.
+    agent_call_interval_seconds: float = 0.0
+
     # Database
     database_url: str = "sqlite:///./razeyn.db"
 

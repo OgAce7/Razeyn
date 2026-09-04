@@ -44,6 +44,15 @@ def on_startup():
     # for the double-recovery guardrails. Not persisted across restarts;
     # that trade-off is intentional for this pass (real SQLAlchemy
     # persistence was scoped out -- see app/api/state.py).
+    #
+    # IMPORTANT: app.state.app_state MUST be set before this function
+    # returns, no matter what happens below. Every other endpoint
+    # (including GET /api/datasets) reads request.app.state.app_state
+    # unconditionally, so if seeding raises and this attribute is left
+    # unset, EVERY request 500s with an AttributeError, not just the
+    # ones related to the seeded dataset -- that's indistinguishable
+    # from "the whole backend is broken" from the frontend's point of
+    # view, however small the actual seeding failure was.
     app.state.app_state = get_app_state()
     try:
         seed_from_synthetic_dataset(app.state.app_state)
@@ -57,6 +66,21 @@ def on_startup():
         # /api/evaluation/audit-trail will return an empty list until a
         # dataset exists. Logged loudly rather than crashing startup.
         logger.warning("Could not seed synthetic dataset: %s", e)
+    except Exception:
+        # Seeding calls the real investigation pipeline (including a live
+        # Mistral API call per candidate incident, see
+        # app/agent/investigate.py) -- a rate limit, timeout, transient
+        # network failure, or any other unexpected error here must not
+        # take the whole app down. app.state.app_state is already set
+        # above, so the app still boots and serves requests; it just
+        # starts with zero seeded incidents until the dataset is
+        # re-activated (POST /api/datasets/activate/seeded) or a real
+        # dataset is uploaded.
+        logger.exception(
+            "Seeding the synthetic dataset failed; the app will still start, but with "
+            "no seeded incidents. Retry via POST /api/datasets/activate/seeded once the "
+            "underlying issue (often a Mistral API problem) is resolved."
+        )
 
 
 @app.get("/")
