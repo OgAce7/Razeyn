@@ -23,7 +23,12 @@ class Settings(BaseSettings):
     # (see app/agent/client.py's module docstring for why this project
     # moved off Mistral for the agent specifically).
     groq_api_key: str = ""
-    groq_agent_model: str = "llama-3.3-70b-versatile"
+    # llama-3.3-70b-versatile was Groq's original recommended tool-calling
+    # model, but Groq deprecated it (announced 2026-06-17, decommissioned
+    # 2026-08-16) in favor of openai/gpt-oss-120b (or the smaller
+    # openai/gpt-oss-20b) -- see https://console.groq.com/docs/deprecations.
+    # Using the old name now fails every call with a 404 model_not_found.
+    groq_agent_model: str = "openai/gpt-oss-120b"
 
     # mistral_api_key is UNRELATED to the agent above -- it's used only,
     # optionally, by app/retrieval/embeddings.py's Mistral embedding

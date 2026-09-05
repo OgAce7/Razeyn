@@ -149,7 +149,7 @@ def test_call_agent_model_uses_configured_model_name(monkeypatch):
     from app.core.config import settings
 
     monkeypatch.setattr(settings, "groq_api_key", "test-key")
-    monkeypatch.setattr(settings, "groq_agent_model", "llama-3.1-8b-instant")
+    monkeypatch.setattr(settings, "groq_agent_model", "qwen/qwen3-32b")
 
     mock_client = MagicMock()
     mock_client.chat.completions.create.return_value = make_tool_call_response({"diagnosis": "ok"})
@@ -157,7 +157,32 @@ def test_call_agent_model_uses_configured_model_name(monkeypatch):
     with patch("groq.Groq", return_value=mock_client):
         call_agent_model("system", "user")
 
-    assert mock_client.chat.completions.create.call_args.kwargs["model"] == "llama-3.1-8b-instant"
+    call_kwargs = mock_client.chat.completions.create.call_args.kwargs
+    assert call_kwargs["model"] == "qwen/qwen3-32b"
+    # reasoning_effort is only added for openai/gpt-oss-* models (see
+    # client.py) -- sending it to other model families is rejected by
+    # Groq with a 400, so it must be omitted here.
+    assert "reasoning_effort" not in call_kwargs
+
+
+def test_call_agent_model_sets_low_reasoning_effort_for_gpt_oss_models(monkeypatch):
+    """openai/gpt-oss-120b (the default model) is a reasoning model --
+    reasoning_effort="low" is sent to keep latency and reasoning-token
+    usage down for what is a single bounded diagnosis + tool call, not
+    deep multi-step reasoning."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "groq_api_key", "test-key")
+    monkeypatch.setattr(settings, "groq_agent_model", "openai/gpt-oss-120b")
+
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.return_value = make_tool_call_response({"diagnosis": "ok"})
+
+    with patch("groq.Groq", return_value=mock_client):
+        call_agent_model("system", "user")
+
+    call_kwargs = mock_client.chat.completions.create.call_args.kwargs
+    assert call_kwargs["reasoning_effort"] == "low"
 
 
 # --------------------------------------------------------------------------
@@ -347,6 +372,21 @@ def test_call_agent_model_constructs_client_with_finite_timeout(monkeypatch):
     _, kwargs = mock_ctor.call_args
     assert kwargs.get("timeout") == REQUEST_TIMEOUT_SECONDS
     assert REQUEST_TIMEOUT_SECONDS is not None and REQUEST_TIMEOUT_SECONDS > 0
+
+
+def test_max_tokens_has_headroom_for_reasoning_models():
+    """Regression test: openai/gpt-oss-120b (the default model) spends
+    tokens on hidden reasoning content before emitting the actual tool
+    call, and those reasoning tokens count against
+    max_completion_tokens. A budget sized only for a plain instruct
+    model's direct output (the previous value, 1500, was sized for
+    Mistral) risks truncating the response before the tool call is ever
+    produced -- which would surface as a confusing
+    MalformedOutputError("no tool call") with no obvious cause, rather
+    than a clean success or an honest token-limit error."""
+    from app.agent.client import MAX_TOKENS
+
+    assert MAX_TOKENS >= 8000
 
 
 def test_call_agent_model_disables_sdk_internal_retries(monkeypatch):

@@ -65,7 +65,18 @@ RATE_LIMIT_BACKOFF_SECONDS = 3.0
 # fix to the "indistinguishable" half of that problem; this constant
 # fixes the "several minutes" half.
 MAX_BACKOFF_SECONDS = 15.0
-MAX_TOKENS = 1500
+# openai/gpt-oss-120b (the default model, see Settings.groq_agent_model)
+# is a reasoning model -- it spends tokens on hidden reasoning content
+# before producing the actual tool call, and those reasoning tokens
+# count against max_completion_tokens. A budget sized for a plain
+# instruct model's output alone (previously 1500, sized for Mistral)
+# risks truncating the response before the tool call is ever emitted,
+# which would surface as a confusing MalformedOutputError("no tool
+# call") rather than a clean success. Together AI's GPT-OSS docs
+# recommend ~30,000 tokens of headroom for reasoning models; kept below
+# that as a middle ground for a single small structured tool call, but
+# well above what a plain-output budget would allow.
+MAX_TOKENS = 8000
 # The Groq SDK (unlike the Mistral SDK previously used here) DOES apply
 # a sane default timeout on its own -- this is set explicitly anyway so
 # the behavior doesn't silently change if that default ever changes
@@ -133,6 +144,17 @@ def call_agent_model(
     model_name = model or settings.groq_agent_model
     tool = _to_groq_tool(TOOL_SCHEMA)
 
+    # reasoning_effort is only accepted by Groq's reasoning models
+    # (openai/gpt-oss-* and qwen3 families) -- sending it to a
+    # non-reasoning model is rejected with a 400. This task is a single
+    # bounded diagnosis + one tool call, not deep multi-step reasoning,
+    # so "low" is used to keep latency and reasoning-token usage down
+    # (see MAX_TOKENS above for why that budget still needs headroom
+    # even at low effort).
+    extra_kwargs: dict = {}
+    if model_name.startswith("openai/gpt-oss"):
+        extra_kwargs["reasoning_effort"] = "low"
+
     last_error: Exception | None = None
     last_was_rate_limit = False
     for attempt in range(MAX_RETRIES + 1):
@@ -146,6 +168,7 @@ def call_agent_model(
                 ],
                 tools=[tool],
                 tool_choice={"type": "function", "function": {"name": TOOL_NAME}},
+                **extra_kwargs,
             )
             return _extract_tool_input(response)
 
