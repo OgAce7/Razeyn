@@ -374,19 +374,21 @@ def test_call_agent_model_constructs_client_with_finite_timeout(monkeypatch):
     assert REQUEST_TIMEOUT_SECONDS is not None and REQUEST_TIMEOUT_SECONDS > 0
 
 
-def test_max_tokens_has_headroom_for_reasoning_models():
-    """Regression test: openai/gpt-oss-120b (the default model) spends
-    tokens on hidden reasoning content before emitting the actual tool
-    call, and those reasoning tokens count against
-    max_completion_tokens. A budget sized only for a plain instruct
-    model's direct output (the previous value, 1500, was sized for
-    Mistral) risks truncating the response before the tool call is ever
-    produced -- which would surface as a confusing
-    MalformedOutputError("no tool call") with no obvious cause, rather
-    than a clean success or an honest token-limit error."""
+def test_max_tokens_fits_within_groq_free_tier_tpm_budget():
+    """Regression test: Groq's free tier caps openai/gpt-oss-120b/-20b at
+    a shared 8,000 tokens-PER-MINUTE budget across both input and
+    output combined. This app's prompts already run ~3,500 tokens on
+    their own (incident + retrieved evidence + allowed-actions list,
+    see app/agent/prompt.py). An earlier version of this constant
+    (8,000) reserved the ENTIRE per-minute budget as output alone --
+    meaning even one call could nearly exhaust the organization's whole
+    TPM allowance, so a second call in the same 60s window reliably
+    429'd on tokens (confirmed live: 'Limit 8000, Used ~7000, Requested
+    ~5000'). This must leave real headroom below 8,000 once combined
+    with a realistic prompt size, not consume the whole budget alone."""
     from app.agent.client import MAX_TOKENS
 
-    assert MAX_TOKENS >= 8000
+    assert MAX_TOKENS <= 4000
 
 
 def test_call_agent_model_disables_sdk_internal_retries(monkeypatch):

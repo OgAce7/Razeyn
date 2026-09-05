@@ -68,15 +68,21 @@ MAX_BACKOFF_SECONDS = 15.0
 # openai/gpt-oss-120b (the default model, see Settings.groq_agent_model)
 # is a reasoning model -- it spends tokens on hidden reasoning content
 # before producing the actual tool call, and those reasoning tokens
-# count against max_completion_tokens. A budget sized for a plain
-# instruct model's output alone (previously 1500, sized for Mistral)
-# risks truncating the response before the tool call is ever emitted,
-# which would surface as a confusing MalformedOutputError("no tool
-# call") rather than a clean success. Together AI's GPT-OSS docs
-# recommend ~30,000 tokens of headroom for reasoning models; kept below
-# that as a middle ground for a single small structured tool call, but
-# well above what a plain-output budget would allow.
-MAX_TOKENS = 8000
+# count against max_completion_tokens. However: Groq's free tier caps
+# gpt-oss-120b/-20b at a shared 8,000 TOKENS-PER-MINUTE budget across
+# BOTH input and output combined -- and this app's prompts (incident +
+# retrieved evidence + allowed-actions list) already run ~3,500 tokens
+# on their own (see app/agent/prompt.py). Reserving the full 8,000 as an
+# *output* ceiling on top of that input cost, as an earlier version of
+# this file did, meant a single call could request close to the
+# organization's entire per-minute allowance, so any second call in the
+# same 60s window reliably 429'd on tokens (not just request count).
+# 2,000 is enough headroom for gpt-oss-120b's reasoning at "low" effort
+# plus this schema's actual output (a few hundred tokens of JSON, see
+# AgentOutput in schema.py) without alone consuming the whole TPM
+# budget. See Settings.agent_call_interval_seconds for the other half
+# of managing this same shared budget across a batch of incidents.
+MAX_TOKENS = 2000
 # The Groq SDK (unlike the Mistral SDK previously used here) DOES apply
 # a sane default timeout on its own -- this is set explicitly anyway so
 # the behavior doesn't silently change if that default ever changes
