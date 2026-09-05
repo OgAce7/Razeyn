@@ -20,7 +20,7 @@ from app.api.state import get_app_state
 # Without this, Python's root logger defaults to WARNING-only, which
 # silently drops every logger.info(...) call in this codebase (e.g. the
 # per-incident progress logging in app/api/pipeline.py that exists
-# specifically so a long-running Mistral API retry sequence at startup
+# specifically so a long-running Groq API retry sequence at startup
 # is visible instead of looking like a hang). basicConfig() here, before
 # any other module's logger is used, ensures INFO+ actually reaches the
 # console this app is run from.
@@ -79,7 +79,7 @@ def on_startup():
         logger.warning("Could not seed synthetic dataset: %s", e)
     except Exception:
         # Seeding calls the real investigation pipeline (including a live
-        # Mistral API call per candidate incident, see
+        # Groq API call per candidate incident, see
         # app/agent/investigate.py) -- a rate limit, timeout, transient
         # network failure, or any other unexpected error here must not
         # take the whole app down. app.state.app_state is already set
@@ -90,7 +90,7 @@ def on_startup():
         logger.exception(
             "Seeding the synthetic dataset failed; the app will still start, but with "
             "no seeded incidents. Retry via POST /api/datasets/activate/seeded once the "
-            "underlying issue (often a Mistral API problem) is resolved."
+            "underlying issue (often a Groq API problem) is resolved."
         )
 
 

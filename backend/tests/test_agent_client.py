@@ -1,8 +1,8 @@
 """
 Tests for app/agent/client.py directly (below the investigate_incident
-orchestration layer). Mocks the mistralai.client.Mistral client itself so
-no network access or API key is required, while still exercising the
-real retry/error-classification/tool-extraction logic in client.py.
+orchestration layer). Mocks the groq.Groq client itself so no network
+access or API key is required, while still exercising the real
+retry/error-classification/tool-extraction logic in client.py.
 """
 
 from __future__ import annotations
@@ -18,11 +18,11 @@ from app.agent.errors import AgentAPIError, MalformedOutputError
 
 
 def make_tool_call_response(arguments, tool_name: str = TOOL_NAME):
-    """Build a fake Mistral ChatCompletionResponse-shaped object. Uses
-    SimpleNamespace rather than the real pydantic models so tests don't
-    depend on constructing every required field of Mistral's generated
-    model classes -- client.py only ever reads .choices[0].message.tool_calls,
-    so that's all we need to fake.
+    """Build a fake Groq ChatCompletion-shaped object. Uses SimpleNamespace
+    rather than the real pydantic models so tests don't depend on
+    constructing every required field of Groq's generated model classes
+    -- client.py only ever reads .choices[0].message.tool_calls, so
+    that's all we need to fake.
     """
     function = SimpleNamespace(name=tool_name, arguments=arguments)
     tool_call = SimpleNamespace(function=function)
@@ -96,7 +96,7 @@ def test_extract_tool_input_raises_when_different_tool_called():
 def test_call_agent_model_raises_when_no_api_key(monkeypatch):
     from app.core.config import settings
 
-    monkeypatch.setattr(settings, "mistral_api_key", "")
+    monkeypatch.setattr(settings, "groq_api_key", "")
     with pytest.raises(AgentAPIError, match="not configured"):
         call_agent_model("system", "user")
 
@@ -104,41 +104,41 @@ def test_call_agent_model_raises_when_no_api_key(monkeypatch):
 def test_call_agent_model_returns_parsed_tool_input_on_success(monkeypatch):
     from app.core.config import settings
 
-    monkeypatch.setattr(settings, "mistral_api_key", "test-key")
+    monkeypatch.setattr(settings, "groq_api_key", "test-key")
 
     mock_client = MagicMock()
-    mock_client.chat.complete.return_value = make_tool_call_response(
+    mock_client.chat.completions.create.return_value = make_tool_call_response(
         {"diagnosis": "ok", "confidence": 0.7}
     )
 
-    with patch("mistralai.client.Mistral", return_value=mock_client):
+    with patch("groq.Groq", return_value=mock_client):
         result = call_agent_model("system prompt", "user prompt")
 
     assert result == {"diagnosis": "ok", "confidence": 0.7}
-    mock_client.chat.complete.assert_called_once()
-    call_kwargs = mock_client.chat.complete.call_args.kwargs
+    mock_client.chat.completions.create.assert_called_once()
+    call_kwargs = mock_client.chat.completions.create.call_args.kwargs
     assert call_kwargs["messages"][0] == {"role": "system", "content": "system prompt"}
     assert call_kwargs["messages"][1] == {"role": "user", "content": "user prompt"}
-    # Forced tool-use: named function, not just "any tool".
-    assert call_kwargs["tool_choice"].function.name == TOOL_NAME
+    assert call_kwargs["tool_choice"] == {"type": "function", "function": {"name": TOOL_NAME}}
 
 
-def test_call_agent_model_sends_tool_in_mistral_function_shape(monkeypatch):
+def test_call_agent_model_sends_tool_in_openai_function_shape(monkeypatch):
     """TOOL_SCHEMA (app/agent/prompt.py) is defined in Anthropic's
     {name, description, input_schema} shape -- confirm client.py adapts
-    it into Mistral's {type: function, function: {name, description,
-    parameters}} wrapper rather than sending it as-is."""
+    it into the OpenAI-style {type: function, function: {name,
+    description, parameters}} wrapper Groq expects, rather than sending
+    it as-is."""
     from app.core.config import settings
 
-    monkeypatch.setattr(settings, "mistral_api_key", "test-key")
+    monkeypatch.setattr(settings, "groq_api_key", "test-key")
 
     mock_client = MagicMock()
-    mock_client.chat.complete.return_value = make_tool_call_response({"diagnosis": "ok"})
+    mock_client.chat.completions.create.return_value = make_tool_call_response({"diagnosis": "ok"})
 
-    with patch("mistralai.client.Mistral", return_value=mock_client):
+    with patch("groq.Groq", return_value=mock_client):
         call_agent_model("system", "user")
 
-    sent_tools = mock_client.chat.complete.call_args.kwargs["tools"]
+    sent_tools = mock_client.chat.completions.create.call_args.kwargs["tools"]
     assert len(sent_tools) == 1
     assert sent_tools[0]["type"] == "function"
     assert sent_tools[0]["function"]["name"] == TOOL_NAME
@@ -148,98 +148,102 @@ def test_call_agent_model_sends_tool_in_mistral_function_shape(monkeypatch):
 def test_call_agent_model_uses_configured_model_name(monkeypatch):
     from app.core.config import settings
 
-    monkeypatch.setattr(settings, "mistral_api_key", "test-key")
-    monkeypatch.setattr(settings, "mistral_agent_model", "mistral-medium-latest")
+    monkeypatch.setattr(settings, "groq_api_key", "test-key")
+    monkeypatch.setattr(settings, "groq_agent_model", "llama-3.1-8b-instant")
 
     mock_client = MagicMock()
-    mock_client.chat.complete.return_value = make_tool_call_response({"diagnosis": "ok"})
+    mock_client.chat.completions.create.return_value = make_tool_call_response({"diagnosis": "ok"})
 
-    with patch("mistralai.client.Mistral", return_value=mock_client):
+    with patch("groq.Groq", return_value=mock_client):
         call_agent_model("system", "user")
 
-    assert mock_client.chat.complete.call_args.kwargs["model"] == "mistral-medium-latest"
+    assert mock_client.chat.completions.create.call_args.kwargs["model"] == "llama-3.1-8b-instant"
 
 
 # --------------------------------------------------------------------------
 # call_agent_model — API failure classification + retry behavior
 # --------------------------------------------------------------------------
 
-def _fake_httpx_response(status_code: int):
-    request = httpx.Request("POST", "https://api.mistral.ai/v1/chat/completions")
-    return httpx.Response(status_code, request=request)
+def _fake_httpx_response(status_code: int, headers: dict | None = None):
+    request = httpx.Request("POST", "https://api.groq.com/openai/v1/chat/completions")
+    return httpx.Response(status_code, request=request, headers=headers or {})
 
 
-def _sdk_error(status_code: int):
-    from mistralai.client.errors import SDKError
+def _rate_limit_error(headers: dict | None = None):
+    from groq import RateLimitError
 
-    return SDKError(f"error {status_code}", raw_response=_fake_httpx_response(status_code))
+    response = _fake_httpx_response(429, headers=headers)
+    return RateLimitError("rate limited", response=response, body=None)
+
+
+def _status_error(status_code: int):
+    from groq import APIStatusError
+
+    response = _fake_httpx_response(status_code)
+    return APIStatusError(f"error {status_code}", response=response, body=None)
 
 
 def test_call_agent_model_retries_on_rate_limit_then_succeeds(monkeypatch):
     from app.core.config import settings
 
-    monkeypatch.setattr(settings, "mistral_api_key", "test-key")
+    monkeypatch.setattr(settings, "groq_api_key", "test-key")
     monkeypatch.setattr("app.agent.client.RETRY_BACKOFF_SECONDS", 0)
     monkeypatch.setattr("app.agent.client.RATE_LIMIT_BACKOFF_SECONDS", 0)
 
-    rate_limit_error = _sdk_error(429)
     success_response = make_tool_call_response({"diagnosis": "recovered", "confidence": 0.6})
 
     mock_client = MagicMock()
-    mock_client.chat.complete.side_effect = [rate_limit_error, success_response]
+    mock_client.chat.completions.create.side_effect = [_rate_limit_error(), success_response]
 
-    with patch("mistralai.client.Mistral", return_value=mock_client):
+    with patch("groq.Groq", return_value=mock_client):
         result = call_agent_model("system", "user")
 
     assert result == {"diagnosis": "recovered", "confidence": 0.6}
-    assert mock_client.chat.complete.call_count == 2
+    assert mock_client.chat.completions.create.call_count == 2
 
 
 def test_call_agent_model_uses_rate_limit_backoff_not_generic_backoff(monkeypatch):
     """A 429 must wait on RATE_LIMIT_BACKOFF_SECONDS, not the shorter
     generic RETRY_BACKOFF_SECONDS used for 5xx/connection errors --
-    regression test for the free-tier rate-limit fix (a fixed 1.5s
-    generic backoff was nowhere near enough for a strict free-tier
-    requests-per-second limit, so 429s need their own, longer schedule)."""
+    regression test carried over from the Mistral-era rate-limit fix
+    (429s need their own, longer schedule than generic transient
+    errors)."""
     from app.core.config import settings
 
-    monkeypatch.setattr(settings, "mistral_api_key", "test-key")
+    monkeypatch.setattr(settings, "groq_api_key", "test-key")
     monkeypatch.setattr("app.agent.client.RETRY_BACKOFF_SECONDS", 0)
     monkeypatch.setattr("app.agent.client.RATE_LIMIT_BACKOFF_SECONDS", 5)
 
-    rate_limit_error = _sdk_error(429)
     success_response = make_tool_call_response({"diagnosis": "recovered"})
 
     mock_client = MagicMock()
-    mock_client.chat.complete.side_effect = [rate_limit_error, success_response]
+    mock_client.chat.completions.create.side_effect = [_rate_limit_error(), success_response]
 
-    with patch("mistralai.client.Mistral", return_value=mock_client), \
+    with patch("groq.Groq", return_value=mock_client), \
          patch("app.agent.client.time.sleep") as mock_sleep:
         call_agent_model("system", "user")
 
-    mock_sleep.assert_called_once_with(5)  # RATE_LIMIT_BACKOFF_SECONDS * (attempt(0) + 1)
+    mock_sleep.assert_called_once_with(5)
 
 
 def test_call_agent_model_honors_retry_after_header_on_rate_limit(monkeypatch):
-    """When Mistral's 429 response includes a Retry-After header, that
-    value should be used instead of our own guessed backoff schedule --
-    the API knows better than a fixed constant how long to wait."""
+    """When Groq's 429 response includes a Retry-After header, that
+    value should be used instead of our own guessed backoff schedule."""
     from app.core.config import settings
 
-    monkeypatch.setattr(settings, "mistral_api_key", "test-key")
+    monkeypatch.setattr(settings, "groq_api_key", "test-key")
     monkeypatch.setattr("app.agent.client.RETRY_BACKOFF_SECONDS", 0)
-    monkeypatch.setattr("app.agent.client.RATE_LIMIT_BACKOFF_SECONDS", 100)  # should be ignored
+    monkeypatch.setattr("app.agent.client.RATE_LIMIT_BACKOFF_SECONDS", 100)
 
-    request = httpx.Request("POST", "https://api.mistral.ai/v1/chat/completions")
-    response_with_header = httpx.Response(429, request=request, headers={"Retry-After": "3"})
-    from mistralai.client.errors import SDKError
-    rate_limit_error = SDKError("error 429", raw_response=response_with_header)
     success_response = make_tool_call_response({"diagnosis": "recovered"})
 
     mock_client = MagicMock()
-    mock_client.chat.complete.side_effect = [rate_limit_error, success_response]
+    mock_client.chat.completions.create.side_effect = [
+        _rate_limit_error(headers={"Retry-After": "3"}),
+        success_response,
+    ]
 
-    with patch("mistralai.client.Mistral", return_value=mock_client), \
+    with patch("groq.Groq", return_value=mock_client), \
          patch("app.agent.client.time.sleep") as mock_sleep:
         call_agent_model("system", "user")
 
@@ -249,38 +253,38 @@ def test_call_agent_model_honors_retry_after_header_on_rate_limit(monkeypatch):
 def test_call_agent_model_retries_on_server_error(monkeypatch):
     from app.core.config import settings
 
-    monkeypatch.setattr(settings, "mistral_api_key", "test-key")
+    monkeypatch.setattr(settings, "groq_api_key", "test-key")
     monkeypatch.setattr("app.agent.client.RETRY_BACKOFF_SECONDS", 0)
 
-    server_error = _sdk_error(503)
+    server_error = _status_error(503)
     success_response = make_tool_call_response({"diagnosis": "recovered"})
 
     mock_client = MagicMock()
-    mock_client.chat.complete.side_effect = [server_error, success_response]
+    mock_client.chat.completions.create.side_effect = [server_error, success_response]
 
-    with patch("mistralai.client.Mistral", return_value=mock_client):
+    with patch("groq.Groq", return_value=mock_client):
         result = call_agent_model("system", "user")
 
     assert result == {"diagnosis": "recovered"}
-    assert mock_client.chat.complete.call_count == 2
+    assert mock_client.chat.completions.create.call_count == 2
 
 
 def test_call_agent_model_gives_up_after_max_retries(monkeypatch):
     from app.core.config import settings
 
-    monkeypatch.setattr(settings, "mistral_api_key", "test-key")
+    monkeypatch.setattr(settings, "groq_api_key", "test-key")
     monkeypatch.setattr("app.agent.client.RETRY_BACKOFF_SECONDS", 0)
 
-    server_error = _sdk_error(500)
+    server_error = _status_error(500)
 
     mock_client = MagicMock()
-    mock_client.chat.complete.side_effect = server_error
+    mock_client.chat.completions.create.side_effect = server_error
 
-    with patch("mistralai.client.Mistral", return_value=mock_client):
+    with patch("groq.Groq", return_value=mock_client):
         with pytest.raises(AgentAPIError, match="failed after"):
             call_agent_model("system", "user")
 
-    assert mock_client.chat.complete.call_count == MAX_RETRIES + 1
+    assert mock_client.chat.completions.create.call_count == MAX_RETRIES + 1
 
 
 def test_call_agent_model_does_not_retry_on_client_error(monkeypatch):
@@ -288,19 +292,19 @@ def test_call_agent_model_does_not_retry_on_client_error(monkeypatch):
     not burn through retries."""
     from app.core.config import settings
 
-    monkeypatch.setattr(settings, "mistral_api_key", "test-key")
+    monkeypatch.setattr(settings, "groq_api_key", "test-key")
     monkeypatch.setattr("app.agent.client.RETRY_BACKOFF_SECONDS", 0)
 
-    auth_error = _sdk_error(401)
+    auth_error = _status_error(401)
 
     mock_client = MagicMock()
-    mock_client.chat.complete.side_effect = auth_error
+    mock_client.chat.completions.create.side_effect = auth_error
 
-    with patch("mistralai.client.Mistral", return_value=mock_client):
+    with patch("groq.Groq", return_value=mock_client):
         with pytest.raises(AgentAPIError):
             call_agent_model("system", "user")
 
-    assert mock_client.chat.complete.call_count == 1  # no retries
+    assert mock_client.chat.completions.create.call_count == 1
 
 
 def test_call_agent_model_propagates_malformed_output_without_retry(monkeypatch):
@@ -309,84 +313,125 @@ def test_call_agent_model_propagates_malformed_output_without_retry(monkeypatch)
     not be retried as though it were an API problem."""
     from app.core.config import settings
 
-    monkeypatch.setattr(settings, "mistral_api_key", "test-key")
+    monkeypatch.setattr(settings, "groq_api_key", "test-key")
     monkeypatch.setattr("app.agent.client.RETRY_BACKOFF_SECONDS", 0)
 
     mock_client = MagicMock()
-    mock_client.chat.complete.return_value = make_no_tool_call_response()
+    mock_client.chat.completions.create.return_value = make_no_tool_call_response()
 
-    with patch("mistralai.client.Mistral", return_value=mock_client):
+    with patch("groq.Groq", return_value=mock_client):
         with pytest.raises(MalformedOutputError):
             call_agent_model("system", "user")
 
-    assert mock_client.chat.complete.call_count == 1  # no retries
+    assert mock_client.chat.completions.create.call_count == 1
 
 
 def test_call_agent_model_constructs_client_with_finite_timeout(monkeypatch):
-    """Regression test: the Mistral SDK applies NO default request
-    timeout unless timeout_ms is passed explicitly -- without it, a
-    stalled connection (common under free-tier load) hangs the call
-    indefinitely instead of raising an error the retry loop can act on.
-    Since app startup calls this synchronously in a loop, an unbounded
-    hang here surfaces as "Waiting for application startup" never
-    resolving, with no error and no traceback at all."""
-    from app.agent.client import REQUEST_TIMEOUT_MS
+    """The Groq client is constructed with an explicit finite timeout
+    so a stalled connection fails after REQUEST_TIMEOUT_SECONDS instead
+    of hanging indefinitely -- see client.py's module docstring for why
+    this mattered so much with the previous (Mistral) provider."""
+    from app.agent.client import REQUEST_TIMEOUT_SECONDS
     from app.core.config import settings
 
-    monkeypatch.setattr(settings, "mistral_api_key", "test-key")
+    monkeypatch.setattr(settings, "groq_api_key", "test-key")
 
     success_response = make_tool_call_response({"diagnosis": "ok"})
     mock_client = MagicMock()
-    mock_client.chat.complete.return_value = success_response
+    mock_client.chat.completions.create.return_value = success_response
 
-    with patch("mistralai.client.Mistral", return_value=mock_client) as mock_ctor:
+    with patch("groq.Groq", return_value=mock_client) as mock_ctor:
         call_agent_model("system", "user")
 
     assert mock_ctor.call_count == 1
     _, kwargs = mock_ctor.call_args
-    assert kwargs.get("timeout_ms") == REQUEST_TIMEOUT_MS
-    assert REQUEST_TIMEOUT_MS is not None and REQUEST_TIMEOUT_MS > 0
+    assert kwargs.get("timeout") == REQUEST_TIMEOUT_SECONDS
+    assert REQUEST_TIMEOUT_SECONDS is not None and REQUEST_TIMEOUT_SECONDS > 0
+
+
+def test_call_agent_model_disables_sdk_internal_retries(monkeypatch):
+    """The Groq SDK has its own built-in retry mechanism (max_retries,
+    default 2) -- this must be disabled (set to 0) so our own retry loop
+    is the only one running, and its behavior stays predictable."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "groq_api_key", "test-key")
+
+    success_response = make_tool_call_response({"diagnosis": "ok"})
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.return_value = success_response
+
+    with patch("groq.Groq", return_value=mock_client) as mock_ctor:
+        call_agent_model("system", "user")
+
+    assert mock_ctor.call_args.kwargs.get("max_retries") == 0
 
 
 def test_call_agent_model_retries_on_timeout_exception(monkeypatch):
-    """An httpx timeout (what a finite timeout_ms actually raises once a
-    stalled request is cut off) must be treated as retryable, same as
-    any other bare transport-level exception."""
+    """A Groq APITimeoutError must be treated as retryable, same as any
+    other bare transport-level exception."""
     from app.core.config import settings
 
-    monkeypatch.setattr(settings, "mistral_api_key", "test-key")
+    monkeypatch.setattr(settings, "groq_api_key", "test-key")
     monkeypatch.setattr("app.agent.client.RETRY_BACKOFF_SECONDS", 0)
 
-    timeout_error = httpx.TimeoutException("timed out")
+    from groq import APITimeoutError
+
+    request = httpx.Request("POST", "https://api.groq.com/openai/v1/chat/completions")
+    timeout_error = APITimeoutError(request=request)
     success_response = make_tool_call_response({"diagnosis": "ok"})
 
     mock_client = MagicMock()
-    mock_client.chat.complete.side_effect = [timeout_error, success_response]
+    mock_client.chat.completions.create.side_effect = [timeout_error, success_response]
 
-    with patch("mistralai.client.Mistral", return_value=mock_client):
+    with patch("groq.Groq", return_value=mock_client):
         result = call_agent_model("system", "user")
 
     assert result == {"diagnosis": "ok"}
-    assert mock_client.chat.complete.call_count == 2
+    assert mock_client.chat.completions.create.call_count == 2
 
 
-def test_call_agent_model_retries_on_bare_connection_error(monkeypatch):
-    """A raw transport exception not wrapped in SDKError (e.g. a
-    connection-level httpx failure) should still be treated as
-    retryable, not crash the retry loop."""
+def test_call_agent_model_retries_on_connection_error(monkeypatch):
+    """A Groq APIConnectionError should still be treated as retryable,
+    not crash the retry loop."""
     from app.core.config import settings
 
-    monkeypatch.setattr(settings, "mistral_api_key", "test-key")
+    monkeypatch.setattr(settings, "groq_api_key", "test-key")
+    monkeypatch.setattr("app.agent.client.RETRY_BACKOFF_SECONDS", 0)
+
+    from groq import APIConnectionError
+
+    request = httpx.Request("POST", "https://api.groq.com/openai/v1/chat/completions")
+    connection_error = APIConnectionError(request=request)
+    success_response = make_tool_call_response({"diagnosis": "ok"})
+
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.side_effect = [connection_error, success_response]
+
+    with patch("groq.Groq", return_value=mock_client):
+        result = call_agent_model("system", "user")
+
+    assert result == {"diagnosis": "ok"}
+    assert mock_client.chat.completions.create.call_count == 2
+
+
+def test_call_agent_model_retries_on_bare_unexpected_exception(monkeypatch):
+    """Any other bare exception not covered by Groq's typed error
+    classes should still be treated as retryable, not crash the retry
+    loop."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "groq_api_key", "test-key")
     monkeypatch.setattr("app.agent.client.RETRY_BACKOFF_SECONDS", 0)
 
     connection_error = ConnectionError("connection reset")
     success_response = make_tool_call_response({"diagnosis": "ok"})
 
     mock_client = MagicMock()
-    mock_client.chat.complete.side_effect = [connection_error, success_response]
+    mock_client.chat.completions.create.side_effect = [connection_error, success_response]
 
-    with patch("mistralai.client.Mistral", return_value=mock_client):
+    with patch("groq.Groq", return_value=mock_client):
         result = call_agent_model("system", "user")
 
     assert result == {"diagnosis": "ok"}
-    assert mock_client.chat.complete.call_count == 2
+    assert mock_client.chat.completions.create.call_count == 2

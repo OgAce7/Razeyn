@@ -136,7 +136,7 @@ def run_pipeline_for_dataset(
             merchant_policies={},
         )
         logger.info(
-            "Investigating incident %d/%d (%s)... this calls the Mistral API and can "
+            "Investigating incident %d/%d (%s)... this calls the Groq API and can "
             "take a while if retries are needed (see app/agent/client.py warnings above "
             "for why, e.g. rate limiting) -- this is not a hang.",
             i + 1, len(candidate_incidents), incident_id,

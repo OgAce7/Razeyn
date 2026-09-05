@@ -1,5 +1,5 @@
 """
-Mistral API client wrapper for the investigation agent.
+Groq API client wrapper for the investigation agent.
 
 This is the ONLY place in the agent module that talks to the network.
 Keeping it isolated means:
@@ -7,25 +7,33 @@ Keeping it isolated means:
     with no real API key or network access required.
   - All API-failure handling (retries, timeouts, error classification)
     lives in one place.
-  - Swapping model providers (this file was originally written against
-    Anthropic's API) only ever touches this one file -- prompt.py's
-    TOOL_SCHEMA, investigate.py's orchestration, and everything
-    downstream of it are provider-agnostic by design and did not need to
-    change for this swap.
+  - Swapping model providers only ever touches this one file --
+    prompt.py's TOOL_SCHEMA, investigate.py's orchestration, and
+    everything downstream of it are provider-agnostic by design and did
+    not need to change for this swap.
 
 Uses forced tool-use (see prompt.py) so the return value is already a
 parsed dict matching the tool's input_schema -- no text/JSON parsing here.
 
-Provider note: Mistral's chat completions API uses OpenAI-style function
-calling rather than Anthropic's tool_use content blocks, so the request/
-response SHAPES differ from what an Anthropic-based version of this file
-would use, even though the RETRY/ERROR-CLASSIFICATION/EXTRACTION
-responsibilities are identical. TOOL_SCHEMA in prompt.py is still defined
-in Anthropic's {name, description, input_schema} shape (kept that way
-since it's a natural, provider-neutral way to describe a tool, and
-downstream code doesn't care) -- _to_mistral_tool() below is the only
-place that shape gets adapted into Mistral's {type, function: {name,
-description, parameters}} wrapper.
+Provider note: this file previously used Mistral's La Plateforme API.
+That was swapped for Groq because Mistral's free "Experiment" tier rate
+limit (~2 requests/minute per Mistral's own docs, see
+https://help.mistral.ai/en/articles/225174) is too strict for this app's
+usage pattern -- seeding/uploading a dataset calls the agent once per
+detected candidate incident, several times in a row, and repeatedly hit
+429s even with generous per-call retry/backoff (see git history of this
+file for that entire debugging saga). Groq's free tier allows 30
+requests/minute -- 15x the headroom -- with no credit card required, and
+uses the same OpenAI-style function-calling request/response shape as
+Mistral did, so this migration only touches this one file plus the
+credential name in app/core/config.py.
+
+TOOL_SCHEMA in prompt.py is still defined in Anthropic's {name,
+description, input_schema} shape (kept that way since it's a natural,
+provider-neutral way to describe a tool, and downstream code doesn't
+care) -- _to_groq_tool() below is the only place that shape gets adapted
+into the OpenAI-style {type, function: {name, description, parameters}}
+wrapper Groq (and Mistral before it) expects.
 """
 
 from __future__ import annotations
@@ -42,41 +50,44 @@ logger = logging.getLogger(__name__)
 
 MAX_RETRIES = 4
 RETRY_BACKOFF_SECONDS = 2.0
-# Free-tier Mistral accounts commonly have very strict per-second/per-minute
-# rate limits (see app/agent/client.py module docstring). A 429 needs a much
-# longer wait than a transient 5xx/connection error -- on a paid tier this
-# rarely triggers, but on the free "Experiment" tier, calling the agent for
-# several incidents back-to-back (as app/api/pipeline.seed_from_synthetic_dataset
-# does on every startup) reliably hits it without this.
-RATE_LIMIT_BACKOFF_SECONDS = 8.0
-# Hard ceiling on any single backoff wait -- without this, growing backoff
-# (RATE_LIMIT_BACKOFF_SECONDS * attempt) compounded with MAX_RETRIES could
-# silently add up to several minutes of unlogged sleeping per call (worse
-# across a whole batch of incidents at startup), which is indistinguishable
-# from a true hang to anyone watching the terminal. See client.py's
-# logging in the retry loop below for the fix to the "indistinguishable"
-# half of that problem; this constant fixes the "several minutes" half.
-MAX_BACKOFF_SECONDS = 20.0
+# Groq's free tier (30 requests/minute) is far more forgiving than
+# Mistral's free tier was, but a rate-limit-specific backoff is still
+# kept distinct from the generic 5xx/connection-error backoff -- a 429
+# means "you must wait", which is a different situation from "retry
+# might just work this time".
+RATE_LIMIT_BACKOFF_SECONDS = 3.0
+# Hard ceiling on any single backoff wait -- without this, growing
+# backoff (RATE_LIMIT_BACKOFF_SECONDS * attempt) compounded with
+# MAX_RETRIES could silently add up to several minutes of unlogged
+# sleeping per call (worse across a whole batch of incidents at
+# startup), which is indistinguishable from a true hang to anyone
+# watching the terminal. See the logging in the retry loop below for the
+# fix to the "indistinguishable" half of that problem; this constant
+# fixes the "several minutes" half.
+MAX_BACKOFF_SECONDS = 15.0
 MAX_TOKENS = 1500
-# The Mistral SDK does not apply any default request timeout on its own --
-# without one, a stalled connection (common under free-tier load, or any
-# transient network issue) hangs the call indefinitely rather than raising
-# an error that the retry loop below can act on. Since app startup calls
-# this synchronously in a loop (see app/api/pipeline.seed_from_synthetic_dataset),
-# an unbounded hang here means "Waiting for application startup" never
-# resolves, with no error, no traceback, nothing -- indistinguishable from
-# a true deadlock. 45s is generous for a single chat completion; a real,
-# fast response typically takes 1-5s.
-REQUEST_TIMEOUT_MS = 45_000
+# The Groq SDK (unlike the Mistral SDK previously used here) DOES apply
+# a sane default timeout on its own -- this is set explicitly anyway so
+# the behavior doesn't silently change if that default ever changes
+# upstream. Without a finite timeout, a stalled connection hangs the
+# call indefinitely rather than raising an error the retry loop below
+# can act on. Since app startup calls this synchronously in a loop (see
+# app/api/pipeline.seed_from_synthetic_dataset), an unbounded hang here
+# means "Waiting for application startup" never resolves, with no
+# error, no traceback, nothing -- indistinguishable from a true
+# deadlock. 45s is generous for a single chat completion; a real, fast
+# response typically takes well under 5s on Groq's hardware.
+REQUEST_TIMEOUT_SECONDS = 45.0
 
 TOOL_NAME = TOOL_SCHEMA["name"]
 
 
-def _to_mistral_tool(schema: dict) -> dict:
+def _to_groq_tool(schema: dict) -> dict:
     """Adapt an Anthropic-shaped tool schema ({name, description,
-    input_schema}) into Mistral's OpenAI-style function-calling shape
-    ({type: "function", function: {name, description, parameters}}).
-    Same JSON Schema body either way -- just a different wrapper."""
+    input_schema}) into the OpenAI-style function-calling shape Groq
+    expects ({type: "function", function: {name, description,
+    parameters}}). Same JSON Schema body either way -- just a different
+    wrapper."""
     return {
         "type": "function",
         "function": {
@@ -92,7 +103,7 @@ def call_agent_model(
     user_prompt: str,
     model: str | None = None,
 ) -> dict:
-    """Call Mistral with forced tool use and return the parsed tool call
+    """Call Groq with forced tool use and return the parsed tool call
     arguments.
 
     Raises
@@ -105,60 +116,64 @@ def call_agent_model(
         from a transport failure.
     """
     try:
-        from mistralai.client import Mistral
-        from mistralai.client.errors import SDKError
-        from mistralai.client.models import ToolChoice, FunctionName
+        from groq import (
+            APIConnectionError,
+            APIStatusError,
+            APITimeoutError,
+            Groq,
+            RateLimitError,
+        )
     except ImportError as e:  # pragma: no cover - dependency always installed per requirements.txt
-        raise AgentAPIError(f"mistralai package not available: {e}") from e
+        raise AgentAPIError(f"groq package not available: {e}") from e
 
-    if not settings.mistral_api_key:
-        raise AgentAPIError("MISTRAL_API_KEY is not configured")
+    if not settings.groq_api_key:
+        raise AgentAPIError("GROQ_API_KEY is not configured")
 
-    client = Mistral(api_key=settings.mistral_api_key, timeout_ms=REQUEST_TIMEOUT_MS)
-    model_name = model or settings.mistral_agent_model
-    tool = _to_mistral_tool(TOOL_SCHEMA)
+    client = Groq(api_key=settings.groq_api_key, timeout=REQUEST_TIMEOUT_SECONDS, max_retries=0)
+    model_name = model or settings.groq_agent_model
+    tool = _to_groq_tool(TOOL_SCHEMA)
 
     last_error: Exception | None = None
     last_was_rate_limit = False
     for attempt in range(MAX_RETRIES + 1):
         try:
-            response = client.chat.complete(
+            response = client.chat.completions.create(
                 model=model_name,
-                max_tokens=MAX_TOKENS,
+                max_completion_tokens=MAX_TOKENS,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
                 ],
                 tools=[tool],
-                tool_choice=ToolChoice(function=FunctionName(name=TOOL_NAME)),
+                tool_choice={"type": "function", "function": {"name": TOOL_NAME}},
             )
             return _extract_tool_input(response)
 
         except MalformedOutputError:
             raise  # not retryable -- the model responded, just not correctly
 
-        except SDKError as e:
-            status_code = getattr(e.raw_response, "status_code", None) if e.raw_response else None
-            if status_code == 429:
-                last_error = e
-                last_was_rate_limit = True
-            elif status_code and 500 <= status_code < 600:
+        except RateLimitError as e:
+            last_error = e
+            last_was_rate_limit = True
+
+        except APIStatusError as e:
+            if e.status_code and 500 <= e.status_code < 600:
                 last_error = e
                 last_was_rate_limit = False
-            elif status_code is not None:
-                # 4xx other than 429 -- bad request, auth, etc. Fail fast.
-                raise AgentAPIError(f"Mistral API error ({status_code}): {e}") from e
             else:
-                # No HTTP response at all (connection-level failure) --
-                # treat as retryable, same as a 5xx.
-                last_error = e
-                last_was_rate_limit = False
+                # 4xx other than 429 -- bad request, auth, etc. Fail fast.
+                raise AgentAPIError(f"Groq API error ({e.status_code}): {e}") from e
+
+        except (APITimeoutError, APIConnectionError) as e:
+            # Timeout or connection-level failure (no HTTP response at
+            # all) -- treat as retryable, same as a 5xx.
+            last_error = e
+            last_was_rate_limit = False
 
         except Exception as e:
-            # Anything else from the SDK/transport layer (e.g. httpx
-            # connection errors that aren't wrapped in SDKError) --
-            # treated as retryable, mirroring the prior Anthropic
-            # version's handling of anthropic.APIConnectionError.
+            # Anything else from the SDK/transport layer -- treated as
+            # retryable, mirroring how a bare connection error is
+            # handled above.
             last_error = e
             last_was_rate_limit = False
 
@@ -170,7 +185,7 @@ def call_agent_model(
                 wait = RETRY_BACKOFF_SECONDS * (attempt + 1)
             wait = min(wait, MAX_BACKOFF_SECONDS)
             logger.warning(
-                "Mistral API call failed (attempt %d/%d, %s): %s -- retrying in %.1fs",
+                "Groq API call failed (attempt %d/%d, %s): %s -- retrying in %.1fs",
                 attempt + 1, MAX_RETRIES + 1,
                 "rate limited" if last_was_rate_limit else "transient error",
                 last_error, wait,
@@ -178,20 +193,20 @@ def call_agent_model(
             time.sleep(wait)
 
     logger.error(
-        "Mistral API call failed permanently after %d attempt(s): %s",
+        "Groq API call failed permanently after %d attempt(s): %s",
         MAX_RETRIES + 1, last_error,
     )
     raise AgentAPIError(
-        f"Mistral API call failed after {MAX_RETRIES + 1} attempt(s): {last_error}"
+        f"Groq API call failed after {MAX_RETRIES + 1} attempt(s): {last_error}"
     ) from last_error
 
 
 def _retry_after_seconds(error: Exception) -> float | None:
-    """If the SDK error carries a Retry-After header, use that instead of
-    our own guessed backoff -- the API is telling us exactly how long to
-    wait, which is more reliable than a fixed schedule."""
-    raw_response = getattr(error, "raw_response", None)
-    headers = getattr(raw_response, "headers", None) if raw_response is not None else None
+    """If the API error carries a Retry-After header, use that instead
+    of our own guessed backoff -- the API is telling us exactly how
+    long to wait, which is more reliable than a fixed schedule."""
+    response = getattr(error, "response", None)
+    headers = getattr(response, "headers", None) if response is not None else None
     if not headers:
         return None
     value = headers.get("retry-after") or headers.get("Retry-After")

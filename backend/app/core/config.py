@@ -11,22 +11,31 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    # LLM -- the investigation agent (app/agent/client.py) calls Mistral.
+    # LLM -- the investigation agent (app/agent/client.py) calls Groq.
     # anthropic_* settings are kept (unused by the agent) only so a
     # switch back to Claude later doesn't require touching config.py.
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-4-6"
 
+    # GROQ_API_KEY powers the investigation agent (app/agent/client.py).
+    # Get a free key (no credit card) from https://console.groq.com --
+    # the free tier allows 30 requests/minute, vs. Mistral's ~2/minute
+    # (see app/agent/client.py's module docstring for why this project
+    # moved off Mistral for the agent specifically).
+    groq_api_key: str = ""
+    groq_agent_model: str = "llama-3.3-70b-versatile"
+
+    # mistral_api_key is UNRELATED to the agent above -- it's used only,
+    # optionally, by app/retrieval/embeddings.py's Mistral embedding
+    # backend, which silently falls back to a local, dependency-free
+    # vectorizer if this is unset. Not required for the app to function.
     mistral_api_key: str = ""
-    mistral_agent_model: str = "mistral-large-latest"
 
     # Delay (seconds) between successive investigate_incident() calls when
     # processing a batch of candidates (dataset seeding/upload) -- 0 by
-    # default (paid tiers don't need it), but free-tier Mistral accounts
-    # commonly enforce a strict requests-per-second limit that firing
-    # several incidents back-to-back at startup reliably trips, even with
-    # per-call retry/backoff in app/agent/client.py. Set e.g. to 2.0 in
-    # .env if you're on a free/rate-limited tier and seeing 429s.
+    # default (Groq's free tier rarely needs this given 30 req/min), but
+    # can be set if you're on a more restrictive tier and seeing 429s
+    # even after the retry/backoff in app/agent/client.py.
     agent_call_interval_seconds: float = 0.0
 
     # Database
